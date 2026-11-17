@@ -1,0 +1,23 @@
+# Usage: cp .env.example .env, fill it in, then `docker compose up -d --build`.
+# Optional HOST_PORT in .env changes the published port (default 3000); do not use PORT.
+# Compose reads .env for the ${...} build args below and env_file passes the same file to the container at runtime.
+# NEXT_PUBLIC_* are baked into the image at BUILD time: after changing them, run `docker compose build --no-cache app`.
+# Not yet run by the author (Docker was unavailable): treat as a starting point.
+services:
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL in .env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY in .env}
+    image: mba-admissions-os
+    env_file: .env
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
