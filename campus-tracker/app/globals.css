@@ -1,0 +1,214 @@
+@import "tailwindcss";
+
+/*
+  Design tokens. "sunny" is the default and is declared twice on purpose: once in @theme
+  (so Tailwind generates utilities) and once under [data-theme="sunny"] (so a preview box
+  can force it inside another theme). scripts/check-contrast.mjs fails if they drift apart.
+  Other themes override the same variables under [data-theme="..."], which works on <html>
+  (the live theme) and on any nested element (theme previews).
+
+  Token roles
+  - primary / success / danger: brand fills that always carry WHITE labels (>= 4.5:1).
+  - ink / secondary: text colors for bg and surface (>= 4.5:1).
+  - accent, success-ink, warning-ink, danger-ink, accent-ink: text-safe versions for links and status text.
+  - fun-*: bright fills that carry on-fun labels. fun-*-dark are the 3D "edge" colors.
+  - line: border for form controls (>= 3:1 on surface).
+*/
+@theme static {
+  --color-primary: #2D7A1F;
+  --color-secondary: #55604F;
+  --color-bg: #FFF8E7;
+  --color-surface: #FFFFFF;
+  --color-border: #EBDDB8;
+  --color-line: #9C8A5B;
+  --color-success: #1E7A3A;
+  --color-warning: #B45309;
+  --color-danger: #C42B2B;
+  --color-accent: #1A64B0;
+  --color-ink: #1F2A1C;
+  --color-success-ink: #17692F;
+  --color-warning-ink: #8F4408;
+  --color-danger-ink: #B02222;
+  --color-accent-ink: #1A64B0;
+  --color-on-fun: #1F2A1C;
+  --color-fun-green: #58C23A;
+  --color-fun-green-dark: #3A9420;
+  --color-fun-blue: #4BA3F5;
+  --color-fun-blue-dark: #2273C4;
+  --color-fun-orange: #FF9F2E;
+  --color-fun-orange-dark: #D97A0B;
+  --color-fun-pink: #FF6F9F;
+  --color-fun-pink-dark: #D9437A;
+  --color-fun-yellow: #FFD43B;
+  --color-fun-yellow-dark: #D6A400;
+  --color-fun-purple: #B68CFF;
+  --color-fun-purple-dark: #7F4FD6;
+  --font-sans: "Nunito", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+[data-theme="sunny"] {
+  --color-primary: #2D7A1F;
+  --color-secondary: #55604F;
+  --color-bg: #FFF8E7;
+  --color-surface: #FFFFFF;
+  --color-border: #EBDDB8;
+  --color-line: #9C8A5B;
+  --color-success: #1E7A3A;
+  --color-warning: #B45309;
+  --color-danger: #C42B2B;
+  --color-accent: #1A64B0;
+  --color-ink: #1F2A1C;
+  --color-success-ink: #17692F;
+  --color-warning-ink: #8F4408;
+  --color-danger-ink: #B02222;
+  --color-accent-ink: #1A64B0;
+  --color-on-fun: #1F2A1C;
+  --color-fun-green: #58C23A;
+  --color-fun-green-dark: #3A9420;
+  --color-fun-blue: #4BA3F5;
+  --color-fun-blue-dark: #2273C4;
+  --color-fun-orange: #FF9F2E;
+  --color-fun-orange-dark: #D97A0B;
+  --color-fun-pink: #FF6F9F;
+  --color-fun-pink-dark: #D9437A;
+  --color-fun-yellow: #FFD43B;
+  --color-fun-yellow-dark: #D6A400;
+  --color-fun-purple: #B68CFF;
+  --color-fun-purple-dark: #7F4FD6;
+  color-scheme: light;
+}
+
+[data-theme="ocean"] {
+  --color-primary: #0B6AA8;
+  --color-secondary: #3C586B;
+  --color-bg: #EEF8FF;
+  --color-surface: #FFFFFF;
+  --color-border: #BFDDF0;
+  --color-line: #5F87A5;
+  --color-success: #0F766E;
+  --color-warning: #B45309;
+  --color-danger: #C2303F;
+  --color-accent: #0A63B3;
+  --color-ink: #0C2638;
+  --color-success-ink: #0B6560;
+  --color-warning-ink: #8F4408;
+  --color-danger-ink: #A9242F;
+  --color-accent-ink: #0A63B3;
+  --color-on-fun: #0C2638;
+  --color-fun-green: #2DD4A8;
+  --color-fun-green-dark: #14A07D;
+  --color-fun-blue: #4DB1FF;
+  --color-fun-blue-dark: #1E80D6;
+  --color-fun-orange: #FFA64D;
+  --color-fun-orange-dark: #E07B12;
+  --color-fun-pink: #FF7BA9;
+  --color-fun-pink-dark: #DB4C80;
+  --color-fun-yellow: #FFD84D;
+  --color-fun-yellow-dark: #D8A800;
+  --color-fun-purple: #A99BFF;
+  --color-fun-purple-dark: #6F5FE0;
+  color-scheme: light;
+}
+
+[data-theme="berry"] {
+  --color-primary: #8A2A8A;
+  --color-secondary: #6A3F5D;
+  --color-bg: #FFF4FA;
+  --color-surface: #FFFFFF;
+  --color-border: #F0CFE2;
+  --color-line: #A06690;
+  --color-success: #1F7A4D;
+  --color-warning: #B45309;
+  --color-danger: #C42B4B;
+  --color-accent: #7B2FBE;
+  --color-ink: #35102B;
+  --color-success-ink: #186A41;
+  --color-warning-ink: #8F4408;
+  --color-danger-ink: #B02240;
+  --color-accent-ink: #7B2FBE;
+  --color-on-fun: #35102B;
+  --color-fun-green: #6CCB5F;
+  --color-fun-green-dark: #45A03A;
+  --color-fun-blue: #6BA8FF;
+  --color-fun-blue-dark: #3A78D8;
+  --color-fun-orange: #FF9F5A;
+  --color-fun-orange-dark: #DE7A22;
+  --color-fun-pink: #FF5FA8;
+  --color-fun-pink-dark: #D63384;
+  --color-fun-yellow: #FFD24D;
+  --color-fun-yellow-dark: #D6A100;
+  --color-fun-purple: #C08BFF;
+  --color-fun-purple-dark: #8A4FD9;
+  color-scheme: light;
+}
+
+[data-theme="midnight"] {
+  --color-primary: #5566E0;
+  --color-secondary: #B9C0E6;
+  --color-bg: #0E1126;
+  --color-surface: #181D38;
+  --color-border: #323A68;
+  --color-line: #7F89C6;
+  --color-success: #1C7F45;
+  --color-warning: #B45309;
+  --color-danger: #C93A3A;
+  --color-accent: #8FB0FF;
+  --color-ink: #F1F3FF;
+  --color-success-ink: #5FD38D;
+  --color-warning-ink: #F5B454;
+  --color-danger-ink: #FF8A8A;
+  --color-accent-ink: #8FB0FF;
+  --color-on-fun: #0E1126;
+  --color-fun-green: #5ED36F;
+  --color-fun-green-dark: #2FA04A;
+  --color-fun-blue: #5AB0FF;
+  --color-fun-blue-dark: #2B7FD6;
+  --color-fun-orange: #FFA64D;
+  --color-fun-orange-dark: #D97A0B;
+  --color-fun-pink: #FF7AAE;
+  --color-fun-pink-dark: #D6477F;
+  --color-fun-yellow: #FFD84D;
+  --color-fun-yellow-dark: #D6A400;
+  --color-fun-purple: #B79BFF;
+  --color-fun-purple-dark: #7C5BE0;
+  color-scheme: dark;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+}
+
+body { background: var(--color-bg); color: var(--color-ink); font-family: var(--font-sans); }
+
+/* Existing pages use these utilities directly. Re-point them at text-safe tokens so every theme stays readable. */
+.text-primary { color: var(--color-ink); }
+.text-success { color: var(--color-success-ink); }
+.text-warning { color: var(--color-warning-ink); }
+.text-danger { color: var(--color-danger-ink); }
+.text-accent { color: var(--color-accent-ink); }
+.bg-white { background-color: var(--color-surface); }
+
+/* Always-visible keyboard focus. Never remove. */
+:focus-visible { outline: 3px solid var(--color-accent-ink); outline-offset: 2px; }
+
+/* Motion helpers. All are switched off by the reduced-motion block below. */
+@keyframes mascot-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes mascot-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+@keyframes stripe-move { from { background-position: 0 0; } to { background-position: 28px 0; } }
+@keyframes pop-in { 0% { transform: scale(0.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes toast-in { 0% { transform: translateY(12px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+
+.mascot-bounce { animation: mascot-bounce 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
+.mascot-breathe { animation: mascot-breathe 3.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
+.progress-stripes {
+  background-image: linear-gradient(135deg, rgb(255 255 255 / 0.28) 25%, transparent 25%, transparent 50%, rgb(255 255 255 / 0.28) 50%, rgb(255 255 255 / 0.28) 75%, transparent 75%);
+  background-size: 28px 28px;
+  animation: stripe-move 1.2s linear infinite;
+}
+.pop-in { animation: pop-in 0.18s ease-out; }
+.toast-in { animation: toast-in 0.22s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-bounce, .mascot-breathe, .progress-stripes, .pop-in, .toast-in { animation: none; }
+  .btn-3d, .btn-3d:active { transition: none; translate: none; }
+}
