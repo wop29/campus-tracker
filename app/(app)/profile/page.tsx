@@ -11,28 +11,26 @@ import { AchievementsTab, EducationTab, GoalsTab, LeadershipTab, NarrativeTab, P
 import { CompetitivenessPanel, CompletenessPanel } from '@/components/profile/summary';
 import { ProgressPanel } from '@/components/profile/progress';
 import { parseOnboarding } from '@/lib/onboarding';
-import { SECTION_LABEL, type SectionKey } from '@/lib/profile';
+import { sectionLabels, type SectionKey } from '@/lib/profile';
 
 type Tab = 'progress' | 'summary' | 'competitiveness' | SectionKey;
+type TabDef = { key: Tab; label: string };
 // Main tabs are the few things everyone needs. The rest are optional extras, shown smaller so they do not overwhelm.
-const MAIN: { key: Tab; label: string }[] = [
-  { key: 'progress', label: 'My progress' },
-  ...(['personal', 'education', 'tests', 'work', 'goals'] as SectionKey[]).map((k) => ({ key: k as Tab, label: SECTION_LABEL[k] })),
-];
-const EXTRA: { key: Tab; label: string }[] = [
-  ...(['leadership', 'achievements', 'narrative'] as SectionKey[]).map((k) => ({ key: k as Tab, label: SECTION_LABEL[k] })),
-  { key: 'summary', label: 'Completeness' }, { key: 'competitiveness', label: 'Competitiveness' },
-];
-const TABS = [...MAIN, ...EXTRA];
+// Undergrads rarely have work history, so it moves to the extras, and activities move up to the main tabs.
+function tabsFor(track: 'grad' | 'undergrad', program?: 'mba' | 'masters' | 'phd'): { main: TabDef[]; extra: TabDef[] } {
+  const L = sectionLabels(track, program); const sec = (k: SectionKey): TabDef => ({ key: k, label: L[k] });
+  const tail: TabDef[] = [{ key: 'summary', label: 'Completeness' }, { key: 'competitiveness', label: 'Competitiveness' }];
+  if (track === 'undergrad') return { main: [{ key: 'progress', label: 'My progress' }, ...(['personal', 'education', 'tests', 'leadership', 'goals'] as SectionKey[]).map(sec)], extra: [...(['achievements', 'narrative', 'work'] as SectionKey[]).map(sec), ...tail] };
+  return { main: [{ key: 'progress', label: 'My progress' }, ...(['personal', 'education', 'tests', 'work', 'goals'] as SectionKey[]).map(sec)], extra: [...(['leadership', 'achievements', 'narrative'] as SectionKey[]).map(sec), ...tail] };
+}
+const TAB_KEYS: Tab[] = ['progress', 'summary', 'competitiveness', 'personal', 'education', 'tests', 'work', 'leadership', 'achievements', 'goals', 'narrative'];
 
 function ProfileInner() {
   const router = useRouter(); const sp = useSearchParams();
-  const tab = (TABS.find((t) => t.key === sp.get('tab'))?.key ?? 'progress') as Tab;
+  const tab = (TAB_KEYS.find((k) => k === sp.get('tab')) ?? 'progress') as Tab;
   const { data, error, loading, reload } = useProfileData();
-  // Undergrad applicants rarely have work history, so it moves to the optional extras for them.
-  const track = parseOnboarding(data?.profile?.settings).track;
-  const main = track === 'undergrad' ? MAIN.filter((t) => t.key !== 'work') : MAIN;
-  const extra = track === 'undergrad' ? [MAIN.find((t) => t.key === 'work')!, ...EXTRA] : EXTRA;
+  const ob = parseOnboarding(data?.profile?.settings);
+  const { main, extra } = tabsFor(ob.track, ob.program);
   const [local, setLocal] = useState<Record<string, boolean> | null>(null);
   const latest = useRef<Record<string, boolean>>({}); latest.current = local ?? data?.profile?.field_verification ?? {};
   const setTab = (k: Tab) => router.replace(`/profile?tab=${k}`);

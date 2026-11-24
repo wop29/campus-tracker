@@ -6,8 +6,15 @@ import { useToast } from '@/components/toast';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { AI_MODES, REVIEW_SECTIONS, orderScores, reviewResponseSchema, type AiMode, type EssayVersionRow, type StoredReview } from '@/lib/essays';
 import { errMsg } from './data';
+import { AI_OFF_MESSAGE, aiEnabled } from '@/lib/features';
 
-export function AiEvalPanel({ essayId, dirty, hasText, latest, onStored }: { essayId: string; dirty: boolean; hasText: boolean; latest: EssayVersionRow | null; onStored: () => void }) {
+/** Hidden entirely when AI is switched off (see lib/features.ts). */
+export function AiEvalPanel(props: { essayId: string; dirty: boolean; hasText: boolean; latest: EssayVersionRow | null; onStored: () => void }) {
+  if (!aiEnabled()) return null;
+  return <AiEvalPanelInner {...props} />;
+}
+
+function AiEvalPanelInner({ essayId, dirty, hasText, latest, onStored }: { essayId: string; dirty: boolean; hasText: boolean; latest: EssayVersionRow | null; onStored: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState<AiMode | null>(null);
   const [fresh, setFresh] = useState<StoredReview | null>(null);
@@ -23,8 +30,7 @@ export function AiEvalPanel({ essayId, dirty, hasText, latest, onStored }: { ess
     try {
       const res = await fetch('/api/ai/essay-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ essayId, mode }) });
       const body = await res.json().catch(() => null);
-      if (res.status === 404) { setNotice('The AI essay review service is not available yet in this build.'); return; }
-      if (res.status === 503 || body?.error === 'not_configured') { setNotice(body?.message ?? 'AI is not configured. Add ANTHROPIC_API_KEY to .env.local to enable reviews. Everything else keeps working.'); return; }
+      if (res.status === 404 || res.status === 503 || body?.error === 'not_configured') { setNotice(AI_OFF_MESSAGE); return; }
       if (res.status === 401) { setNotice('You are signed out. Sign in again and retry.'); return; }
       if (!res.ok) { setNotice(body?.message ?? `The review failed (status ${res.status}). Try again.`); return; }
       const parsed = reviewResponseSchema.safeParse(body);

@@ -4,12 +4,22 @@ Reminders are meant to feel fun, encouraging and calm. Never nagging. So this is
 
 | Kind | When it is sent | What it says |
 | --- | --- | --- |
-| `deadline_week` | An application that is not submitted yet has its deadline exactly 7 days away. Again at 3 days and at 1 day. | "You have a week, here is the short list": up to 4 mandatory items still open, with a button to that application. |
+| `deadline_week` | An application that is not submitted yet has its deadline exactly 7 days away. Again at 3 days and at 1 day. | "You have a week, here is the short list": up to 4 open checklist items (required first), with a button to that application. |
 | `result_soon` | A submitted application expects its result tomorrow or today (one email per result, not both days). | A warm note: "Whatever it says, you did the work." |
 | `nudge` | No progress for 2 full days. Sent after 2, 5 and 12 full days of silence. After 3 weeks (21 days) one final "we will be here when you are ready" note, then nothing at all until the student comes back. | What they have done so far ("4 of 9 ready") and ONE tiny step of about 2 minutes, taken from their real open items. |
 | `celebration` | Yesterday they reached a milestone: first item done, half way, all items ready, or submitted. | A short well done. |
 
 If two things are true on the same day, the one higher in the table wins. On a day a student is simply active, nothing is sent. Every email has a one-click unsubscribe link.
+
+**What students are told** (the same line in Settings and Notifications, from `EMAIL_PROMISE` in `lib/reminders.ts`):
+
+> We send a short email only when it helps: a deadline is a week away, a result is due, or you've been away for a couple of days. Never daily.
+
+While no email provider is set (see below), Settings and Notifications instead add: "Email reminders will start once the app owner connects an email service." The app learns this from `GET /api/reminders/status`, which returns only `{ "email": true | false }`.
+
+**Counts match the app.** "4 of 12 ready" in an email is counted exactly like the Applications page (`checklistProgress` in `lib/results.ts`: every checklist item except "Submission confirmation"). At zero progress the check-in never says "0 of N"; it says "You haven't started yet, and that's okay. Here's an easy first step." Emails greet the student by first name when known, and links are buttons in the HTML version.
+
+**AI features** are hidden from students unless `NEXT_PUBLIC_AI_ENABLED=1` is set at build time (see `lib/features.ts`); the server also needs `ANTHROPIC_API_KEY`.
 
 Nothing is sent until you add the settings below. Without an email provider the app runs in "dry run" mode: it works out who would get an email and logs it, but sends nothing.
 

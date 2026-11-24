@@ -122,3 +122,16 @@ export function buildRecAiRequest(c: RecAiContext): { system: string; prompt: st
   if (c.extraNotes?.trim()) parts.push('', `Applicant's own notes: ${c.extraNotes.trim()}`);
   return { system: REC_AI_SYSTEM, prompt: parts.join('\n'), maxTokens: 1200 };
 }
+
+// ---------- form copy per track ----------
+/** Labels and examples for the recommender form. Undergrads ask teachers and counselors, grads ask managers and colleagues. */
+export type RecommenderCopy = { orgLabel: string; positionHint: string; relationshipHint: string; emptyHint: string; backgroundHint: string };
+export function recommenderCopy(track: 'grad' | 'undergrad' | null | undefined): RecommenderCopy {
+  return track === 'undergrad'
+    ? { orgLabel: 'School or organisation', positionHint: 'e.g. Maths teacher, school counselor', relationshipHint: 'e.g. My maths teacher for 2 years',
+      emptyHint: 'Add the teachers, counselors or mentors you plan to ask, then assign them to each university separately.',
+      backgroundHint: 'Classes, projects or activities you did together, and anything you want them to remember about you.' }
+    : { orgLabel: 'Company', positionHint: 'e.g. Senior Manager', relationshipHint: 'e.g. Direct manager for 3 years',
+      emptyHint: 'Add the people you plan to ask, then assign them to each school separately.',
+      backgroundHint: 'Projects you worked on together, facts you want them to be aware of.' };
+}

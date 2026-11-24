@@ -25,7 +25,7 @@ test('latest valid is null when only expired', () => {
 });
 test('score validation by test type', () => {
   assert.ok(validateTestScore({ test_type: 'GMAT', exam_version: 'Focus Edition', overall: 900 }).overall);
-  assert.deepEqual(validateTestScore({ test_type: 'GMAT', exam_version: 'Focus Edition', overall: 645, quant: 80 }), {});
+  assert.deepEqual(validateTestScore({ test_type: 'GMAT', exam_version: 'Focus Edition', overall: 645, quant: 80, test_date: '2025-01-01' }, NOW), {});
   assert.ok(validateTestScore({ test_type: 'GMAT', exam_version: 'Classic (10th Edition)', quant: 70, overall: 700 }).quant);
   assert.ok(validateTestScore({ test_type: 'GRE', verbal: 120, quant: 160 }).verbal);
   assert.ok(validateTestScore({ test_type: 'IELTS', overall: 9.5 }).overall);

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Check, Pencil, Trash2 } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
@@ -12,9 +12,14 @@ import { EMPTY_ART, reqIconFor, reqIconSrc } from '@/lib/art';
 import { cn } from '@/lib/utils';
 import { isoToWall, stageForDecision, todayStr, wallToIso, type DecisionStatus, type Requirement } from '@/lib/applications';
 import {
-  PHASES, PHASE_LABEL, RESULT_LABEL, SUBMIT_ITEM, daysUntil, fmtDay, isDone, isInterviewStage, readyText, reqAction, shortDetail, todoStatus, type Phase,
+  PHASES, PHASE_LABEL, RESULT_LABEL, ROUND_ITEM, SUBMIT_ITEM, bestProgramMatch, daysUntil, finishText, fmtDay, isDone, isInterviewStage, nextOpenRound, nextRoundText,
+  readyText, reqAction, resultNote, shortDetail, todoStatus, type Phase, type RoundStatus,
 } from '@/lib/results';
+import { PROGRAM_COLS, parsePrograms, type Program } from '@/lib/programs';
+import { useToast } from '@/components/toast';
+import { useEmailConfigured } from '@/components/settings/use-email-status';
 import { useAction } from './data';
+import { updateChecklistFromProgram } from './program-start';
 import type { AppView } from './view-model';
 
 const panel = 'rounded-2xl border-2 bg-surface';
@@ -56,11 +61,37 @@ function DeadlineBadge({ v, onEdit }: { v: AppView; onEdit: () => void }) {
   );
 }
 
+/** "Next open round: Round 2, 5 Jan 2027 (43 days)" plus every round, with past ones marked closed. */
+function RoundsLine({ v }: { v: AppView }) {
+  const t = v.rounds;
+  const line = nextRoundText(t);
+  if (!line) return null;
+  const mine = v.row.round ? t.find((r) => r.round.toLowerCase() === v.row.round!.toLowerCase()) : null;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className={cn('text-[15px] font-extrabold', nextOpenRound(t) ? 'text-ink' : 'text-secondary')}>{line}</p>
+      {mine?.closed && <p className="text-sm font-bold text-danger-ink">Your round ({mine.round}) closed on {fmtDay(mine.deadline)}. You can still pick the next open round.</p>}
+      <ul className="flex flex-wrap gap-2" aria-label="Application rounds">
+        {t.map((r) => (
+          <li key={`${r.round}-${r.deadline}`} className={cn('rounded-full border-2 px-3 py-1 text-[13px] font-bold',
+            r.closed ? 'border-border bg-bg text-secondary' : r.next ? 'border-fun-green-dark bg-fun-green/20 text-ink' : 'border-line bg-surface text-ink')}>
+            <span className={cn(r.closed && 'line-through')}>{r.round}, {fmtDay(r.deadline)}</span>
+            {r.closed ? <span className="ml-1.5 no-underline">(closed)</span> : r.next ? <span className="ml-1.5">(next)</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function DeadlineDialog({ v, open, onClose, onSaved }: { v: AppView; open: boolean; onClose: () => void; onSaved: () => void }) {
   const tz = v.due?.timezone ?? 'America/New_York';
   const [date, setDate] = useState('');
+  const [round, setRound] = useState('');
   const { busy, run } = useAction();
-  useEffect(() => { if (open) setDate(v.due ? isoToWall(v.due.due_at, tz).date : ''); }, [open, v.due, tz]);
+  const openRounds = v.rounds.filter((r) => !r.closed);
+  useEffect(() => { if (open) { setDate(v.due ? isoToWall(v.due.due_at, tz).date : ''); setRound(v.row.round ?? ''); } }, [open, v.due, v.row.round, tz]);
+  function pick(r: RoundStatus) { setRound(r.round); setDate(r.deadline); }
   async function save() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
     const sb = supabaseBrowser();
@@ -68,13 +99,30 @@ function DeadlineDialog({ v, open, onClose, onSaved }: { v: AppView; open: boole
     const ok = await run(async () => {
       if (v.due) await must(sb.from('deadlines').update({ due_at: wallToIso(date, time, tz) }).eq('id', v.due.id));
       else await must(sb.from('deadlines').insert({ application_id: v.row.id, name: 'Submission deadline', kind: 'submission', is_primary: true, timezone: tz, due_at: wallToIso(date, time, tz) }));
+      if (round.trim() !== (v.row.round ?? '')) await must(sb.from('applications').update({ round: round.trim().slice(0, 40) || null }).eq('id', v.row.id));
+      // choosing a round and its date is the first checklist item
+      await must(sb.from('application_requirements').update({ status: 'complete' }).eq('application_id', v.row.id).eq('name', ROUND_ITEM).neq('status', 'complete'));
     }, 'Deadline saved');
     if (ok) { onSaved(); onClose(); }
   }
   return (
-    <Modal open={open} onClose={onClose} title="When is the deadline?">
+    <Modal open={open} onClose={onClose} title="Pick your round and deadline">
       <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-4">
-        <Field label="Deadline date" hint="Copy the date from the school website."><Input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        {openRounds.length > 0 && (
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-sm font-bold text-ink">Rounds still open</legend>
+            {openRounds.map((r) => (
+              <label key={`${r.round}-${r.deadline}`} className={cn('flex min-h-11 cursor-pointer items-center gap-3 rounded-2xl border-2 px-3 py-2 text-[15px]', round === r.round && date === r.deadline ? 'border-fun-green-dark bg-fun-green/15' : 'border-line hover:bg-bg')}>
+                <input type="radio" name="round" checked={round === r.round && date === r.deadline} onChange={() => pick(r)} className="h-4 w-4" />
+                <span className="flex-1 font-bold text-ink">{r.round}</span>
+                <span className="text-secondary">{fmtDay(r.deadline)} · {r.daysLeft === 0 ? 'today' : days(r.daysLeft)}</span>
+              </label>
+            ))}
+            {v.rounds.some((r) => r.closed) && <p className="text-xs text-secondary">Rounds whose deadline has passed are not shown.</p>}
+          </fieldset>
+        )}
+        <Field label="Deadline date" hint={openRounds.length ? 'Filled in from the round you pick. Check it on the school website.' : 'Copy the date from the school website.'}><Input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="Round (optional)" hint="For example Round 2. Leave blank if the school has a single deadline."><Input value={round} maxLength={40} onChange={(e) => setRound(e.target.value)} /></Field>
         <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || !date}>{busy ? 'Saving...' : 'Save deadline'}</Button></div>
       </form>
     </Modal>
@@ -98,9 +146,13 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
     </section>
   );
 }
-function Row({ r, v, busy, onToggle, readOnly }: { r: Requirement; v: AppView; busy: boolean; onToggle: (r: Requirement, done: boolean) => void; readOnly?: boolean }) {
+function Row({ r, v, busy, onToggle, readOnly, struck, onPickRound }: {
+  r: Requirement; v: AppView; busy: boolean; onToggle: (r: Requirement, done: boolean) => void; readOnly?: boolean;
+  /** Just ticked: shown done with a line through it, still in its old place for a moment. */
+  struck?: boolean; onPickRound?: () => void;
+}) {
   const essay = r.essay_id ? v.essays.get(r.essay_id) ?? null : null;
-  const done = isDone(r);
+  const done = isDone(r) || !!struck;
   const detail = shortDetail(r, essay);
   const status = todoStatus(r, essay);
   const action = reqAction(r, essay);
@@ -112,11 +164,13 @@ function Row({ r, v, busy, onToggle, readOnly }: { r: Requirement; v: AppView; b
         : <Tick checked={done} disabled={busy} label={`${r.name}: ${done ? 'done, untick to reopen' : 'tick when done'}`} onChange={(next) => onToggle(r, next)} />}
       {icon ? <ArtImg src={reqIconSrc(icon)} alt="" size={36} className={cn(done && 'opacity-60')} /> : <span aria-hidden className="w-9 shrink-0" />}
       <span className="flex min-w-[220px] flex-1 flex-col gap-0.5">
-        <span className="flex flex-wrap items-center gap-2 text-base font-extrabold text-ink">{r.name}{!r.mandatory && <span className="rounded-full border-2 px-2 py-px text-[11px] font-extrabold uppercase tracking-wide text-secondary">Optional</span>}</span>
+        <span className={cn('flex flex-wrap items-center gap-2 text-base font-extrabold text-ink', struck && 'text-secondary line-through')}>{r.name}{!r.mandatory && <span className="rounded-full border-2 px-2 py-px text-[11px] font-extrabold uppercase tracking-wide text-secondary">Optional</span>}</span>
         {detail && <span className="text-sm text-secondary">{detail}</span>}
       </span>
       <Badge tone={done ? 'success' : status === 'in_progress' ? 'accent' : 'warning'} className="whitespace-nowrap px-2.5 py-1 font-extrabold">{done ? (r.status === 'waived' ? 'Not needed' : 'Done') : status === 'in_progress' ? 'In progress' : 'Not started'}</Badge>
-      {!done && !readOnly && (action.kind === 'link'
+      {!done && !readOnly && (r.name === ROUND_ITEM && onPickRound
+        ? <button type="button" disabled={busy} onClick={onPickRound} className={outlineBtn}>Pick a round</button>
+        : action.kind === 'link'
         ? <Link href={action.href} className={outlineBtn}>{action.label}</Link>
         : <button type="button" disabled={busy} onClick={() => onToggle(r, true)} className={outlineBtn}>{action.label}</button>)}
     </li>
@@ -124,14 +178,29 @@ function Row({ r, v, busy, onToggle, readOnly }: { r: Requirement; v: AppView; b
 }
 
 /* ------------------------------------------------------------------ before submit */
-function PrepareView({ v, reload, onSubmitted }: { v: AppView; reload: () => void; onSubmitted: () => void }) {
+function PrepareView({ v, reload, onSubmitted, onPickRound }: { v: AppView; reload: () => void; onSubmitted: () => void; onPickRound: () => void }) {
   const { busy, run } = useAction();
   const [confirm, setConfirm] = useState(false);
+  // A ticked row stays where it is, crossed out, for a moment before it moves to Done, so the next row
+  // does not slide under the cursor. While any row is settling, the "still to do" order is frozen.
+  const [frozen, setFrozen] = useState<string[] | null>(null);
+  const [struck, setStruck] = useState<Set<string>>(new Set());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   const p = v.progress;
   const sb = supabaseBrowser();
 
+  function settle(id: string) {
+    setFrozen((f) => f ?? p.todo.map((r) => r.id));
+    setStruck((s) => new Set(s).add(id));
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { setFrozen(null); setStruck(new Set()); timer.current = null; }, 1500);
+  }
   async function toggle(r: Requirement, done: boolean) {
-    if (await run(async () => { await must(sb.from('application_requirements').update({ status: done ? 'complete' : 'not_started' }).eq('id', r.id)); })) reload();
+    if (done) settle(r.id);
+    const ok = await run(async () => { await must(sb.from('application_requirements').update({ status: done ? 'complete' : 'not_started' }).eq('id', r.id)); });
+    if (ok) reload();
+    else if (done) setStruck((s) => { const n = new Set(s); n.delete(r.id); return n; });
   }
   async function submit() {
     const ok = await run(async () => {
@@ -142,7 +211,13 @@ function PrepareView({ v, reload, onSubmitted }: { v: AppView; reload: () => voi
     setConfirm(false);
     if (ok) { onSubmitted(); reload(); }
   }
-  const left = p.todo.length;
+  const byId = new Map((v.row.application_requirements ?? []).map((r) => [r.id, r]));
+  // while frozen: the old order, with fresh data; rows added since then go at the end
+  const todoRows = frozen
+    ? [...frozen.map((id) => byId.get(id)).filter((r): r is Requirement => !!r), ...p.todo.filter((r) => !frozen.includes(r.id))]
+    : p.todo;
+  const doneRows = p.done.filter((r) => !(frozen?.includes(r.id)));
+  const left = todoRows.length;
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -150,16 +225,16 @@ function PrepareView({ v, reload, onSubmitted }: { v: AppView; reload: () => voi
         <span className="text-sm font-bold text-secondary">{readyText(p)}</span>
       </div>
       {left > 0
-        ? <Group title={`Still to do · ${left}`}>{p.todo.map((r) => <Row key={r.id} r={r} v={v} busy={busy} onToggle={toggle} />)}</Group>
+        ? <Group title={`Still to do · ${p.todo.length}`}>{todoRows.map((r) => <Row key={r.id} r={r} v={v} busy={busy} onToggle={toggle} struck={struck.has(r.id)} onPickRound={onPickRound} />)}</Group>
         : p.total
           ? <div className={cn(panel, 'flex flex-wrap items-center gap-4 border-fun-green-dark p-5')}>
               <ArtImg src={EMPTY_ART['all-done'].src} alt={EMPTY_ART['all-done'].alt} size={112} priority />
               <p className="min-w-[200px] flex-1 text-[15px] font-bold text-ink">Everything on your list is ticked off. Nice work! Mochi is taking a well earned break.</p>
             </div>
           : <div className={cn(panel, 'border-fun-green-dark p-5 text-[15px] font-bold text-ink')}>There is nothing on this checklist yet.</div>}
-      {p.done.length > 0 && <Group title={`Done · ${p.done.length}`}>{p.done.map((r) => <Row key={r.id} r={r} v={v} busy={busy} onToggle={toggle} />)}</Group>}
+      {doneRows.length > 0 && <Group title={`Done · ${p.done.length}`}>{doneRows.map((r) => <Row key={r.id} r={r} v={v} busy={busy} onToggle={toggle} />)}</Group>}
       <div className={cn(panel, 'flex flex-wrap items-center justify-between gap-4 px-5 py-4')}>
-        <p className="text-[15px] text-secondary">{left > 0 ? `Finish the ${left} item${left === 1 ? '' : 's'} above, then submit on the school site.` : 'Submit on the school site, then tell us here.'}</p>
+        <p className="text-[15px] text-secondary">{finishText(p)}</p>
         <Button className="min-h-12 px-6 text-base font-black" disabled={busy} onClick={() => (p.mandatoryOpen.length ? setConfirm(true) : void submit())}>I have submitted</Button>
       </div>
       <Modal open={confirm} onClose={() => setConfirm(false)} title="Some items are not ticked off yet">
@@ -204,6 +279,7 @@ function Submitted({ v, reload }: { v: AppView; reload: () => void }) {
 
 function ResultCountdown({ v, reload }: { v: AppView; reload: () => void }) {
   const { busy, run } = useAction();
+  const emailOn = useEmailConfigured() === true;
   const r = v.result;
   const rounds = v.dates?.rounds ?? [];
   const [own, setOwn] = useState(v.row.expected_result_on ?? '');
@@ -227,17 +303,18 @@ function ResultCountdown({ v, reload }: { v: AppView; reload: () => void }) {
   );
   const invited = isInterviewStage(v.row.stage);
   const waitPose: MascotPose = invited ? 'interview' : 'reading';
-  const source = r.sourceUrl && <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-primary underline">Source</a>;
+  const note = resultNote(r);
+  const source = r.sourceUrl && <>You can check the latest dates on <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-primary underline">the school&apos;s website</a>.</>;
 
   if (!r.date) {
     return (
       <section className={cn(panel, 'flex flex-col gap-3 border-fun-green-dark p-6')}>
         <div className="flex items-start justify-between gap-4">
-          <h2 className="text-[22px] font-black leading-tight text-ink">{r.needsRoundChoice ? 'Tell us your round to see the result date' : 'The school has not announced a result date'}</h2>
+          <h2 className="text-[22px] font-black leading-tight text-ink">{r.needsRoundChoice ? 'Tell us your round to see the result date' : 'The school has not published result dates yet.'}</h2>
           <Mascot pose={waitPose} size={80} priority />
         </div>
         <p className="text-[15px] text-secondary">{submittedOn ? `You submitted on ${submittedOn}. ` : ''}Nothing more to do for now.</p>
-        {r.note && <p className="text-[15px] text-ink">{r.note} {source}</p>}
+        {(note || source) && <p className="text-[15px] text-ink">{note ? `The school says: ${note}. ` : ''}{source}</p>}
         {roundPicker}
         {!r.needsRoundChoice && <><p className="text-sm text-secondary">If you have an idea of when you will hear back, add your own date and we will count down to it.</p>{ownDate}</>}
       </section>
@@ -254,11 +331,11 @@ function ResultCountdown({ v, reload }: { v: AppView; reload: () => void }) {
         <h2 className="text-[22px] font-black leading-tight text-ink">Result expected on {fmtDay(r.date)}</h2>
         <p className="text-[15px] text-secondary">
           {submittedOn ? `You submitted on ${submittedOn}. ` : ''}
-          {n > 0 ? 'Nothing more to do for now. We will email you a reminder the day before results come out.' : n === 0 ? 'Today is the day. Check your email and the school portal.' : 'The date has passed. Check your email and the school portal, then tell us how it went.'}
+          {n > 0 ? (emailOn ? 'Nothing more to do for now. We will email you a reminder the day before results come out.' : 'Nothing more to do for now. We will remind you here the day before results come out.') : n === 0 ? 'Today is the day. Check your email and the school portal.' : 'The date has passed. Check your email and the school portal, then tell us how it went.'}
         </p>
         {r.from === 'school'
           ? <p className="text-sm text-secondary">Date taken from the school&apos;s published decision calendar{r.round ? ` (${r.round.round})` : ''}. {source}</p>
-          : <p className="text-sm text-secondary">This is your own estimate. The school has not announced a result date. {r.note} {source}</p>}
+          : <p className="text-sm text-secondary">This is your own estimate. The school has not published result dates yet. {note ? `The school says: ${note}. ` : ''}{source}</p>}
         {roundPicker}
         {r.from === 'you' && ownDate}
       </div>
@@ -298,7 +375,7 @@ function OutcomeButtons({ v, reload, onAdmitted }: { v: AppView; reload: () => v
             <button key={o.decision} type="button" disabled={busy || pressed} aria-pressed={o.decision === 'interview_invited' ? pressed : undefined}
               onClick={() => void record(o.decision, o.decision === 'interview_invited' ? 'Interview invite saved. Good luck!' : 'Result saved')}
               className={cn('btn-3d min-h-12 rounded-2xl border-2 border-b-4 px-5 text-[15px] font-extrabold transition active:translate-y-[2px] active:border-b-2 disabled:cursor-not-allowed',
-                o.decision === 'admitted' ? 'border-fun-green-dark bg-fun-green/25 text-primary hover:bg-fun-green/40' : pressed ? 'border-fun-blue-dark bg-fun-blue/25 text-ink' : 'border-line bg-surface text-ink hover:bg-bg')}>
+                pressed ? 'border-fun-blue-dark bg-fun-blue/25 text-ink' : 'border-line bg-surface text-ink hover:bg-bg')}>
               {pressed ? 'Invited to interview ✓' : o.label}
             </button>
           );
@@ -338,6 +415,64 @@ function ResultCard({ v, reload, onAdmitted }: { v: AppView; reload: () => void;
   );
 }
 
+/* ------------------------------------------------------------------ older applications */
+/**
+ * Applications made before program checklists existed use the general template. When the school has a researched
+ * program, offer to switch to its own checklist. Completed and started items are kept.
+ */
+function UpdateChecklistBanner({ v, reload }: { v: AppView; reload: () => void }) {
+  const a = v.row;
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [pickId, setPickId] = useState('');
+  const [hidden, setHidden] = useState(false);
+  const { busy, run } = useAction();
+  const toast = useToast();
+  const dismissKey = `cq-checklist-update-dismissed:${a.id}`;
+  const names = [a.school?.name, a.school?.short_name].filter((n): n is string => !!n);
+  const eligible = v.phase === 'prepare' && !a.program_requirement_id && names.length > 0;
+  useEffect(() => {
+    if (!eligible) return;
+    try { if (localStorage.getItem(dismissKey)) { setHidden(true); return; } } catch { /* private mode */ }
+    let live = true;
+    void supabaseBrowser().from('program_requirements').select(PROGRAM_COLS).in('school_name', names).order('program_name').then(({ data }) => {
+      if (!live) return;
+      const list = parsePrograms(data);
+      setPrograms(list);
+      setPickId(bestProgramMatch(a.program, list)?.id ?? list[0]?.id ?? '');
+    });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eligible, a.id, names.join('|')]);
+  if (!eligible || hidden || !programs.length) return null;
+  const program = programs.find((p) => p.id === pickId) ?? null;
+  async function apply() {
+    if (!program || !a.school_id) return;
+    let added = 0;
+    const ok = await run(async () => { added = await updateChecklistFromProgram(supabaseBrowser(), a.id, a.school_id, program); });
+    if (ok) {
+      reload(); setHidden(true);
+      toast(added ? `Checklist updated with ${added} item${added === 1 ? '' : 's'} from ${v.school}. Your finished items are kept.` : 'Checklist updated. Your finished items are kept.');
+    }
+  }
+  return (
+    <section className={cn(panel, 'flex flex-col gap-3 border-fun-blue-dark bg-fun-blue/10 p-4')} aria-label="Update this checklist">
+      <p className="text-[15px] font-extrabold text-ink">Update this checklist from {v.school}&apos;s official requirements</p>
+      <p className="text-sm text-secondary">This list uses our general template. We can switch it to the school&apos;s own items and essay prompts. Anything you have done or started stays.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {programs.length > 1 && (
+          <label className="flex flex-wrap items-center gap-2 text-sm font-bold text-secondary">Program
+            <Select className="w-auto min-w-[12rem]" value={pickId} onChange={(e) => setPickId(e.target.value)}>
+              {programs.map((p) => <option key={p.id} value={p.id}>{p.program_name}</option>)}
+            </Select>
+          </label>
+        )}
+        <Button disabled={busy || !program} onClick={() => void apply()} className="min-h-11">{busy ? 'Updating...' : 'Update checklist'}</Button>
+        <Button variant="ghost" className="min-h-11" onClick={() => { setHidden(true); try { localStorage.setItem(dismissKey, '1'); } catch { /* ignore */ } }}>Not now</Button>
+      </div>
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------------ the pane */
 export function ApplicationDetail({ v, reload, onEdit, onDelete }: { v: AppView; reload: () => void; onEdit: () => void; onDelete: () => void }) {
   const [deadlineOpen, setDeadlineOpen] = useState(false);
@@ -355,15 +490,17 @@ export function ApplicationDetail({ v, reload, onEdit, onDelete }: { v: AppView;
           {v.phase === 'prepare' ? <DeadlineBadge v={v} onEdit={() => setDeadlineOpen(true)} />
             : <span className="rounded-full bg-fun-green/25 px-3.5 py-1.5 text-sm font-extrabold text-primary">{v.phase === 'submitted' ? 'Submitted' : RESULT_LABEL[a.stage] ?? 'Result'}</span>}
         </div>
+        {v.phase === 'prepare' && <RoundsLine v={v} />}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Steps phase={v.phase} />
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" onClick={onEdit}><Pencil size={13} /> Edit</Button>
-            <ConfirmButton variant="ghost" size="sm" message="Delete this application? Your essays are kept." onConfirm={onDelete}><Trash2 size={13} /> Delete</ConfirmButton>
+            <Button variant="ghost" size="sm" className="min-h-11" onClick={onEdit}><Pencil size={13} /> Edit</Button>
+            <Button variant="ghost" size="sm" className="min-h-11" onClick={onDelete} aria-label={`Delete ${v.school}, ${a.program}`}><Trash2 size={13} /> Delete</Button>
           </div>
         </div>
       </header>
-      {v.phase === 'prepare' && <PrepareView v={v} reload={reload} onSubmitted={() => { setJustSubmitted(true); setParty((n) => n + 1); }} />}
+      <UpdateChecklistBanner v={v} reload={reload} />
+      {v.phase === 'prepare' && <PrepareView v={v} reload={reload} onPickRound={() => setDeadlineOpen(true)} onSubmitted={() => { setJustSubmitted(true); setParty((n) => n + 1); }} />}
       {justSubmitted && v.phase !== 'prepare' && (
         <div className={cn(panel, 'pop-in flex flex-wrap items-center gap-4 border-fun-green-dark bg-fun-green/15 p-5')} role="status">
           <Mascot pose="party" size={96} priority />

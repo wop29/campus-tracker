@@ -1,4 +1,4 @@
-import { IN_PROGRESS, PIPELINE, SUBMITTED_OR_LATER } from './constants.ts';
+import { IN_PROGRESS, SUBMITTED_OR_LATER } from './constants.ts';
 import { deadlineRisk, daysUntil, type Risk } from './logic/risk.ts';
 import { readiness, DEFAULT_WEIGHTS, type Weights, type ReqCategory } from './logic/readiness.ts';
 import type { AppRow, DeadlineRow, ExpenseRow, OverviewData, ReqRow, SchoolRow } from './overview-data.ts';
@@ -63,30 +63,6 @@ export function computeKpis(d: OverviewData, base: string, now: Date): Kpis {
     budget: budgetTotals(d.expenses, base), spending: spendingTotals(d.expenses, base),
     scholarships: ident + applied, scholarshipsIdentified: ident, scholarshipsApplied: applied,
   };
-}
-
-export type Filters = { school: string; country: string; tier: string; round: string; status: string; deadlineBefore: string; priority: string };
-export const EMPTY_FILTERS: Filters = { school: '', country: '', tier: '', round: '', status: '', deadlineBefore: '', priority: '' };
-/** Applies the dashboard filters. Empty string means "any". deadlineBefore keeps applications whose governing deadline is on or before that date. */
-export function filterApps(d: Pick<OverviewData, 'applications' | 'schools' | 'deadlines'>, f: Filters, now: Date): AppRow[] {
-  const schools = new Map(d.schools.map((s) => [s.id, s]));
-  return d.applications.filter((a) => {
-    const s = schools.get(a.school_id);
-    if (f.school && a.school_id !== f.school) return false;
-    if (f.country && s?.country !== f.country) return false;
-    if (f.tier && s?.tier !== f.tier) return false;
-    if (f.round && (a.round ?? '') !== f.round) return false;
-    if (f.status && a.stage !== f.status) return false;
-    if (f.priority && String(a.priority) !== f.priority) return false;
-    if (f.deadlineBefore) {
-      const dl = governingDeadline(d.deadlines, a.id, now);
-      if (!dl || dl.due_at.slice(0, 10) > f.deadlineBefore) return false;
-    }
-    return true;
-  });
-}
-export function pipelineCounts(apps: AppRow[]) {
-  return PIPELINE.map((col) => ({ ...col, apps: apps.filter((a) => (col.stages as string[]).includes(a.stage)) }));
 }
 
 export type DeadlineRowView = {

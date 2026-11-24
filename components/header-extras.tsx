@@ -17,9 +17,9 @@ function SearchBox() {
   useEffect(() => { setQ(params.get('q') ?? ''); }, [params]);
   return (
     <form role="search" className="relative" onSubmit={(e) => { e.preventDefault(); const t = q.trim(); if (t) router.push(`/search?q=${encodeURIComponent(t)}`); }}>
-      <label htmlFor="global-search" className="sr-only">Search schools, applications and essays</label>
+      <label htmlFor="global-search" className="sr-only">Search schools, programs, applications, essays</label>
       <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary" aria-hidden />
-      <input id="global-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search schools, applications, essays" maxLength={100}
+      <input id="global-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search schools, programs, applications, essays" maxLength={100}
         className="w-44 rounded-md border bg-white py-1.5 pl-8 pr-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent sm:w-64" />
     </form>
   );

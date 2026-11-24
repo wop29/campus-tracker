@@ -3,6 +3,14 @@
 import { z } from 'zod';
 import { badgeArtSrc } from './art.ts';
 
+/**
+ * Art for badges that lib/art.ts has no ribbon for. Source Hunter uses the map pin (finding schools), Funding Push the brave
+ * Mochi. Any other badge without art falls back to the plain star ribbon, so no badge shows a bare lock.
+ */
+const EXTRA_BADGE_ART: Record<string, string> = { 'source-hunter': '/art/badge/first-school.webp', 'funding-push': '/art/badge/brave-applicant.webp' };
+export const GENERIC_BADGE_ART = '/art/badge/half-way.webp';
+export const badgeArt = (id: string): string => badgeArtSrc(id) ?? EXTRA_BADGE_ART[id] ?? GENERIC_BADGE_ART;
+
 export type XpEvent = { kind: string; points: number; occurred_at: string };
 
 /** Keep in sync with the comment block in 018_gamification.sql. dailyCap is enforced by the database. */
@@ -23,8 +31,9 @@ export const XP_TABLE = [
   { kind: 'recommender_added', label: 'Add a recommender', points: 5, dailyCap: 10 },
   { kind: 'recommendation_submitted', label: 'A recommendation is submitted', points: 25 },
   { kind: 'application_submitted', label: 'Submit an application', points: 100 },
-  { kind: 'interview_completed', label: 'Complete an interview session', points: 20 },
-  { kind: 'interview_feedback', label: 'Record interview feedback', points: 5, dailyCap: 10 },
+  // Interview practice is switched off. These rows stay so old events keep their XP, but they are retired: never listed in the UI.
+  { kind: 'interview_completed', label: 'Complete an interview session', points: 20, retired: true },
+  { kind: 'interview_feedback', label: 'Record interview feedback', points: 5, dailyCap: 10, retired: true },
   { kind: 'scholarship_applied', label: 'Apply for a scholarship', points: 30 },
   { kind: 'expense_paid', label: 'Mark an expense as paid', points: 5, dailyCap: 10 },
   { kind: 'ai_rec_completed', label: 'Complete a recommended action', points: 10, dailyCap: 10 },
@@ -32,6 +41,9 @@ export const XP_TABLE = [
   { kind: 'document_version', label: 'Upload a document version', points: 5, dailyCap: 10 },
 ] as const;
 export const KIND_LABEL: Record<string, string> = Object.fromEntries(XP_TABLE.map((x) => [x.kind, x.label]));
+const RETIRED_KINDS = new Set<string>(XP_TABLE.filter((x) => 'retired' in x && x.retired).map((x) => x.kind));
+/** The XP rules a student can still earn from (retired interview practice rules removed). Use this for any list shown in the UI. */
+export const ACTIVE_XP_TABLE = XP_TABLE.filter((x) => !RETIRED_KINDS.has(x.kind));
 
 const ESSAY_KINDS = ['essay_first_version', 'essay_version'];
 const PROFILE_KINDS = ['profile_education', 'profile_work', 'profile_leadership', 'profile_achievement', 'profile_test'];
@@ -166,14 +178,14 @@ export function weeklySummary(events: XpEvent[], now: Date, tz: string): WeeklyS
     if (!d) continue;
     d.xp += e.points; const t = byKind.get(e.kind) ?? { count: 0, xp: 0 }; t.count++; t.xp += e.points; byKind.set(e.kind, t);
   }
-  const top = [...byKind.entries()].map(([kind, v]) => ({ kind, label: KIND_LABEL[kind] ?? kind, ...v })).sort((a, b) => b.xp - a.xp || a.kind.localeCompare(b.kind)).slice(0, 3);
+  const top = [...byKind.entries()].filter(([kind]) => !RETIRED_KINDS.has(kind)).map(([kind, v]) => ({ kind, label: KIND_LABEL[kind] ?? kind, ...v })).sort((a, b) => b.xp - a.xp || a.kind.localeCompare(b.kind)).slice(0, 3);
   return { days, totalXp: days.reduce((s, d) => s + d.xp, 0), activeDays: days.filter((d) => d.xp > 0).length, top };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Badges. Derived from events only. unlocked_at is the time of the event that completed the requirement.
 export type BadgeColor = 'green' | 'blue' | 'orange' | 'pink' | 'yellow' | 'purple';
-/** art: ribbon picture in public/art/badge, or null when the badge keeps its lucide icon. */
+/** art: ribbon picture in public/art/badge (every badge has one; null only for callers building badges by hand). */
 export type Badge = { id: string; title: string; description: string; color: BadgeColor; icon: string; art: string | null; target: number; current: number; unlocked: boolean; unlockedAt: string | null; hint: string };
 type BadgeDef = { id: string; title: string; description: string; color: BadgeColor; icon: string; target: number; hint: string; measure: (c: BadgeCtx) => number; unlockedAt: (c: BadgeCtx) => string | null };
 type BadgeCtx = { sorted: XpEvent[]; streak: Streak; dayFirst: Map<string, string>; days: string[] };
@@ -214,7 +226,7 @@ export function computeBadges(events: XpEvent[], now: Date, tz: string): Badge[]
   const ctx: BadgeCtx = { sorted, streak: streakFromDays(days, dayKey(now, tz)), dayFirst, days };
   return BADGES.map((b) => {
     const current = Math.min(b.measure(ctx), b.target), at = current >= b.target ? b.unlockedAt(ctx) : null;
-    return { id: b.id, title: b.title, description: b.description, color: b.color, icon: b.icon, art: badgeArtSrc(b.id), target: b.target, current, unlocked: current >= b.target && at !== null, unlockedAt: at, hint: b.hint };
+    return { id: b.id, title: b.title, description: b.description, color: b.color, icon: b.icon, art: badgeArt(b.id), target: b.target, current, unlocked: current >= b.target && at !== null, unlockedAt: at, hint: b.hint };
   });
 }
 /** Up to n locked badges, closest to unlocking first. */

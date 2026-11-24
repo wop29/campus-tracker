@@ -1,12 +1,12 @@
 'use client';
-// "My progress": the steps you have finished, what comes next, and the deadlines coming up. Replaces the old Analytics page.
+// "My progress": the Journey steps (same numbers as the Journey page, from computeJourney), plus deadlines coming up.
+// It has no percentage of its own, so it can never disagree with Journey.
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Circle, CircleDashed } from 'lucide-react';
 import { Card, ErrorBox, Loading } from '@/components/ui';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fetchJourneyBundle } from '@/lib/gamification-data';
-import { loadOnboarding } from '@/components/onboarding/data';
 import { computeJourney, type Journey } from '@/lib/journey';
 import { useOverviewData } from '@/components/overview/use-overview';
 import { computeKpis, deadlineTimeline } from '@/lib/overview-logic';
@@ -17,8 +17,8 @@ export function ProgressPanel() {
   const { data, now } = useOverviewData();
   useEffect(() => {
     const sb = supabaseBrowser();
-    void Promise.all([fetchJourneyBundle(sb), loadOnboarding(sb)])
-      .then(([b, ob]) => setJourney(computeJourney(b.journey, { track: ob.track, program: ob.program, stage: ob.stage })))
+    void fetchJourneyBundle(sb)
+      .then((b) => setJourney(computeJourney(b.journey, b.profile)))
       .catch((e) => setErr((e as Error).message));
   }, []);
   const deadlines = useMemo(() => (data ? deadlineTimeline(data, data.applications, now).slice(0, 3) : []), [data, now]);
@@ -33,9 +33,9 @@ export function ProgressPanel() {
   return (
     <div className="space-y-4">
       <Card>
-        <p className="text-sm font-bold">You are {journey.overallPct}% of the way there</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><p className="text-sm font-bold">Your Journey: {journey.overallPct}% done</p><Link href="/journey" className="inline-flex min-h-[44px] items-center text-xs font-bold text-accent underline">Same as your Journey. Open it</Link></div>
         <div className="mt-2 h-3 overflow-hidden rounded-full bg-bg"><div className="h-full rounded-full bg-fun-green" style={{ width: `${journey.overallPct}%` }} /></div>
-        <p className="mt-2 text-xs text-secondary">{journey.doneCount} of {journey.total} steps done. Small steps add up.</p>
+        <p className="mt-2 text-xs text-secondary">{journey.doneCount} of {journey.total} Journey steps done{journey.skipped ? `, ${journey.skipped} early steps skipped (optional)` : ''}. Small steps add up.</p>
       </Card>
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

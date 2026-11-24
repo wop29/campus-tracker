@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a valid date').nullable();
 const optText = (max = 4000) => z.string().max(max, `Max ${max} characters`).nullable();
-const today = () => new Date().toISOString().slice(0, 10);
 const order = (a: string | null, b: string | null) => !a || !b || b >= a;
 
 export const EducationSchema = z.object({
@@ -17,11 +16,11 @@ export const EducationSchema = z.object({
   if (v.gpa != null && v.gpa_scale != null && v.gpa > v.gpa_scale) c.addIssue({ code: 'custom', path: ['gpa'], message: `GPA cannot be higher than the scale (${v.gpa_scale})` });
 });
 
+// Date rules (required when taken, not in the future, optional target date when planned) live in validateTestScore.
 export const TestSchema = z.object({
-  test_type: z.enum(['GMAT', 'GRE', 'IELTS', 'TOEFL', 'OTHER']), exam_version: optText(100),
+  test_type: z.enum(['GMAT', 'GRE', 'SAT', 'ACT', 'IELTS', 'TOEFL', 'PTE', 'DUOLINGO', 'OTHER']), status: z.enum(['taken', 'planned']), exam_version: optText(100),
   overall: z.number().nullable(), quant: z.number().nullable(), verbal: z.number().nullable(), data_insights: z.number().nullable(), analytical_writing: z.number().nullable(),
-  test_date: date.refine((d) => d !== null, 'Test date is required so validity can be checked').refine((d) => !d || d <= today(), 'Test date cannot be in the future'),
-  attempt_number: z.number().int('Whole number').min(1, 'Attempt must be 1 or more'), notes: optText(),
+  test_date: date, attempt_number: z.number('Enter a whole number').int('Whole number').min(1, 'Attempt must be 1 or more'), notes: optText(),
 });
 
 export const WorkSchema = z.object({
@@ -48,6 +47,7 @@ export const GoalsSchema = z.object({
   why_mba: optText(), why_now: optText(), short_term_goal: optText(), long_term_goal: optText(), target_industry: optText(200), target_function: optText(200),
   target_geography: optText(200), career_transition: optText(), target_companies: z.array(z.string().max(100)).max(30, 'Max 30 companies'),
 });
+export const UndergradGoalsSchema = z.object({ why_mba: optText(), short_term_goal: optText(), long_term_goal: optText() });
 export const NarrativeSchema = z.object({
   background: optText(), life_experiences: optText(), motivations: optText(), challenges: optText(), leadership_philosophy: optText(), values: optText(), aspirations: optText(),
 });

@@ -69,7 +69,7 @@ export async function loadReminderRows(sb: SupabaseClient, ids: string[], now: D
         ),
       ),
       get<ReminderRows['deadlines'][number]>('deadlines', 'id,application_id,name,due_at,timezone,kind,is_primary'),
-      get<ReminderRows['requirements'][number]>('application_requirements', 'id,application_id,name,category,status,mandatory,completed_at,updated_at'),
+      get<ReminderRows['requirements'][number]>('application_requirements', 'id,application_id,name,category,status,mandatory,sort_order,completed_at,updated_at'),
       get<ReminderRows['decisions'][number]>('admissions_decisions', 'id,application_id,decision'),
       tolerant(() => get<{ occurred_at: string }>('xp_events', 'id,occurred_at', { sinceCol: 'occurred_at' })),
       tolerant(() => get<{ updated_at: string }>('essays', 'id,updated_at', { notDeleted: true, sinceCol: 'updated_at' })),

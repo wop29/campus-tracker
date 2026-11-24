@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_ONBOARDING, nextIntakes, parseOnboarding, toStoredOnboarding, isValidTimeZone } from '../lib/onboarding.ts';
+import { DEFAULT_ONBOARDING, DESTINATION_LABEL, DESTINATIONS, FIELD_LABEL, FIELDS, intakeOptions, nextIntakes, parseOnboarding, timeZoneOptions, toStoredOnboarding, isValidTimeZone } from '../lib/onboarding.ts';
 import { buildUnits, computeJourney, EMPTY_JOURNEY_DATA, skippedUnitCount, type JourneyData } from '../lib/journey.ts';
 
 // ---------- parse ----------
@@ -15,7 +15,7 @@ test('onboarding parse: missing or junk settings give defaults with done=false',
 });
 test('onboarding parse: valid values survive', () => {
   const o = parseOnboarding({ theme: 'ocean', onboarding: { done: true, track: 'grad', program: 'phd', destinations: ['uk', 'us'], intake: 'Fall 2027', stage: 'applying', reminders: { email: false, hourLocal: 8 }, timezone: 'Asia/Jakarta' } });
-  assert.deepEqual(o, { done: true, track: 'grad', program: 'phd', destinations: ['us', 'uk'], intake: 'Fall 2027', stage: 'applying', reminders: { email: false, hourLocal: 8 }, timezone: 'Asia/Jakarta' });
+  assert.deepEqual(o, { done: true, track: 'grad', program: 'phd', programs: ['phd'], destinations: ['us', 'uk'], intake: 'Fall 2027', stage: 'applying', reminders: { email: false, hourLocal: 8 }, timezone: 'Asia/Jakarta' });
 });
 test('onboarding parse: invalid fields fall back one by one', () => {
   const o = parseOnboarding({ onboarding: { done: 'yes', track: 'phd', program: 'law', destinations: ['us', 'mars', 3, 'us'], intake: '   ', stage: 'done', reminders: { email: 'no', hourLocal: 25 }, timezone: 'Not/AZone' } });
@@ -31,6 +31,62 @@ test('next intakes: three upcoming starts at least three months out', () => {
   assert.deepEqual(nextIntakes(new Date(2026, 10, 16)), ['Fall 2027', 'Spring 2028', 'Fall 2028']);
   assert.deepEqual(nextIntakes(new Date(2026, 2, 1)), ['Fall 2026', 'Spring 2027', 'Fall 2027']);
   assert.deepEqual(nextIntakes(new Date(2026, 6, 1)), ['Spring 2027', 'Fall 2027', 'Spring 2028']);
+});
+
+test('onboarding parse: several programs keep their order and program stays the first choice', () => {
+  const o = parseOnboarding({ onboarding: { track: 'grad', programs: ['masters', 'mba', 'law', 'masters'] } });
+  assert.equal(o.program, 'masters'); assert.deepEqual(o.programs, ['masters', 'mba']);
+  // older rows that only have `program`
+  assert.deepEqual(parseOnboarding({ onboarding: { track: 'grad', program: 'mba' } }).programs, ['mba']);
+  // an explicit program always leads
+  assert.deepEqual(parseOnboarding({ onboarding: { track: 'grad', program: 'phd', programs: ['mba', 'phd'] } }).programs, ['phd', 'mba']);
+  // undergrad drops both
+  const u = toStoredOnboarding({ ...DEFAULT_ONBOARDING, track: 'undergrad', program: 'mba', programs: ['mba', 'masters'] });
+  assert.equal(u.program, undefined); assert.equal(u.programs, undefined);
+  assert.equal(parseOnboarding({ onboarding: { track: 'grad', programs: 'mba' } }).programs, undefined);
+});
+test('onboarding parse: fields are optional, known and deduped', () => {
+  assert.equal(parseOnboarding({ onboarding: { track: 'undergrad' } }).fields, undefined);
+  assert.equal(parseOnboarding({ onboarding: { fields: [] } }).fields, undefined);
+  assert.deepEqual(parseOnboarding({ onboarding: { track: 'undergrad', fields: ['cs', 'astrology', 'business', 'cs', 4] } }).fields, ['cs', 'business']);
+  assert.equal(FIELDS.length, 9);
+  assert.deepEqual(FIELDS.map((f) => FIELD_LABEL[f]), ['Business', 'Computer Science', 'Engineering', 'Economics/Finance', 'Data Science', 'Design', 'Health/Medicine', 'Social Sciences', 'Other']);
+});
+test('onboarding: Singapore and Hong Kong are destinations', () => {
+  assert.ok(DESTINATIONS.includes('singapore') && DESTINATIONS.includes('hongkong'));
+  assert.equal(DESTINATION_LABEL.hongkong, 'Hong Kong');
+  assert.deepEqual(parseOnboarding({ onboarding: { destinations: ['hongkong', 'singapore', 'sg'] } }).destinations, ['singapore', 'hongkong']);
+});
+test('intake options follow the chosen countries', () => {
+  const nov = new Date(2026, 10, 16);
+  assert.deepEqual(intakeOptions([], nov), ['Fall 2027', 'Spring 2028', 'Fall 2028']);
+  assert.deepEqual(intakeOptions(['us', 'canada'], nov), ['Fall 2027', 'Spring 2028', 'Fall 2028']);
+  assert.deepEqual(intakeOptions(['uk'], nov), ['Fall 2027', 'January 2028', 'Fall 2028']);
+  assert.deepEqual(intakeOptions(['singapore', 'hongkong'], new Date(2026, 6, 1)), ['January 2027', 'Fall 2027', 'January 2028']);
+  assert.deepEqual(intakeOptions(['australia'], nov), ['Semester 1 2027 (Feb)', 'Semester 2 2027 (Jul)', 'Semester 1 2028 (Feb)']);
+  assert.deepEqual(intakeOptions(['australia'], new Date(2026, 11, 1)), ['Semester 2 2027 (Jul)', 'Semester 1 2028 (Feb)', 'Semester 2 2028 (Jul)']);
+  const both = intakeOptions(['australia', 'us'], nov);
+  assert.equal(both.length, 6); assert.ok(both.includes('Fall 2027') && both.includes('Semester 1 2027 (Feb)'));
+  for (const label of both) assert.ok(label.length <= 40, 'fits the stored intake limit');
+  // a semester label survives parsing
+  assert.equal(parseOnboarding({ onboarding: { intake: 'Semester 1 2027 (Feb)' } }).intake, 'Semester 1 2027 (Feb)');
+});
+test('time zone options include Jakarta first and are all valid', () => {
+  const tz = timeZoneOptions();
+  assert.equal(tz[0], 'Asia/Jakarta'); assert.ok(tz.length >= 10); assert.equal(new Set(tz).size, tz.length);
+  assert.ok(tz.every((z) => isValidTimeZone(z)));
+});
+test('onboarding copy: no em dashes, no "actually", says steps not taps, no daily nudge', async () => {
+  const { readFile, readdir } = await import('node:fs/promises');
+  const dir = new URL('../components/onboarding/', import.meta.url);
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.tsx'));
+  const all = (await Promise.all(files.map((f) => readFile(new URL(f, dir), 'utf8')))).join('\n') + Object.values(FIELD_LABEL).join(' ');
+  assert.ok(!all.includes('—')); assert.ok(!/\bactually\b/i.test(all));
+  assert.ok(!/quick taps/i.test(all)); assert.match(all, /Four quick steps/);
+  assert.ok(!/daily email nudge/i.test(all)); assert.match(all, /Gentle email reminders \(only when it helps, never daily\)/);
+  // step 3: the mascot line and the subtitle must not repeat each other
+  const stepThree = 'Joining late is fine, we will start you where you are.';
+  assert.equal(all.split(stepThree).length - 1, 1);
 });
 
 // ---------- journey tailoring ----------

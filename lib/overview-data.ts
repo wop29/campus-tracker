@@ -36,7 +36,16 @@ export type OverviewData = {
   recommendations: RecommendationRow[]; recommenders: RecommenderRow[]; essays: EssayRow[]; expenses: ExpenseRow[]; scholarships: ScholarshipRow[];
   interviews: InterviewRow[]; testScores: TestScoreRow[]; work: WorkRow[]; assessments: AssessmentRow[]; decisions: DecisionRow[];
   settings: Record<string, unknown>; profileExists: boolean;
+  /** Optional extras for the track-aware rules engine (absent in older callers and fixtures). */
+  educationCount?: number; activityCount?: number; satSchools?: string[];
 };
+
+/** True when a program_requirements tests text asks for SAT or ACT (and does not say it is optional or not used). */
+export function asksForSat(text: unknown): boolean {
+  const t = typeof text === 'string' ? text : text && typeof text === 'object' && typeof (text as { value?: unknown }).value === 'string' ? (text as { value: string }).value : '';
+  if (!/\b(SAT|ACT)\b/.test(t)) return false;
+  return !/(test[- ]optional|optional|not required|test[- ]blind|not accepted|not considered|no longer require)/i.test(t);
+}
 
 const check = <T,>(r: { data: T[] | null; error: { message: string } | null }, label: string): T[] => {
   if (r.error) throw new Error(`${label}: ${r.error.message}`);
@@ -45,7 +54,7 @@ const check = <T,>(r: { data: T[] | null; error: { message: string } | null }, l
 
 /** Loads every table the dashboard needs in parallel. Soft-deleted rows are excluded. Throws on any error. */
 export async function loadOverviewData(sb: SupabaseClient): Promise<OverviewData> {
-  const [schools, apps, deadlines, reqs, tasks, recs, recommenders, essays, expenses, scholarships, interviews, tests, work, assessments, decisions, profile] = await Promise.all([
+  const [schools, apps, deadlines, reqs, tasks, recs, recommenders, essays, expenses, scholarships, interviews, tests, work, assessments, decisions, profile, education, leadership, achievements] = await Promise.all([
     sb.from('schools').select('id,name,short_name,country,location,tier,in_portfolio,priority').is('deleted_at', null),
     sb.from('applications').select('id,school_id,program,intake,round,priority,application_fee,fee_currency,stage,submission_confirmed_at,submitted_at,created_at').is('deleted_at', null),
     sb.from('deadlines').select('id,application_id,name,due_at,timezone,kind,is_primary'),
@@ -57,18 +66,33 @@ export async function loadOverviewData(sb: SupabaseClient): Promise<OverviewData
     sb.from('expenses').select('id,school_id,application_id,category,description,estimated_cost,actual_cost,currency,fx_rate_to_base,payment_status,payment_date').is('deleted_at', null),
     sb.from('scholarships').select('id,name,school_id,amount,currency,deadline,status').is('deleted_at', null),
     sb.from('interview_sessions').select('id,application_id,school_id,kind,scheduled_at,status'),
-    sb.from('test_scores').select('id,test_type').is('deleted_at', null),
+    sb.from('test_scores').select('id,test_type').is('deleted_at', null).neq('status', 'planned'),
     sb.from('work_experiences').select('id,company,position,measurable_impact').is('deleted_at', null),
     sb.from('ai_assessments').select('id,kind,subject_id'),
     sb.from('admissions_decisions').select('id,application_id,decision,decision_date,deposit_deadline,waitlist_response_deadline,scholarship_amount,scholarship_currency,updated_at'),
     sb.from('applicant_profiles').select('id,settings').is('deleted_at', null).maybeSingle(),
+    sb.from('education_records').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+    sb.from('leadership_experiences').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+    sb.from('achievements').select('id', { count: 'exact', head: true }).is('deleted_at', null),
   ]);
+  const countOf = (r: { count: number | null; error: unknown }) => (r.error ? undefined : r.count ?? 0);
+  const educationCount = countOf(education), activityCount = leadership.error || achievements.error ? undefined : (leadership.count ?? 0) + (achievements.count ?? 0);
+  const schoolRows = check<SchoolRow>(schools as never, 'schools');
+  // Undergrad requirements for schools on the list that ask for SAT or ACT. Optional: an error here never breaks the dashboard.
+  let satSchools: string[] = [];
+  const listNames = schoolRows.filter((s) => s.in_portfolio).map((s) => s.name);
+  if (listNames.length) {
+    const pr = await sb.from('program_requirements').select('school_name,data').eq('degree_type', 'undergrad').in('school_name', listNames);
+    if (!pr.error) satSchools = [...new Set((pr.data ?? []).filter((r) => asksForSat((r.data as Record<string, unknown> | null)?.tests)).map((r) => {
+      const s = schoolRows.find((x) => x.name === r.school_name); return s?.short_name || s?.name || String(r.school_name);
+    }))];
+  }
   if (profile.error) throw new Error(`profile: ${profile.error.message}`);
   const appRows = check<AppRow>(apps as never, 'applications');
   const liveApps = new Set(appRows.map((a) => a.id));
   const ofLiveApp = <T extends { application_id: string | null }>(rows: T[]) => rows.filter((r) => r.application_id == null || liveApps.has(r.application_id));
   return {
-    schools: check<SchoolRow>(schools as never, 'schools'),
+    schools: schoolRows,
     applications: appRows,
     deadlines: ofLiveApp(check<DeadlineRow>(deadlines as never, 'deadlines')),
     requirements: ofLiveApp(check<ReqRow>(reqs as never, 'requirements')),
@@ -85,5 +109,6 @@ export async function loadOverviewData(sb: SupabaseClient): Promise<OverviewData
     decisions: ofLiveApp(check<DecisionRow>(decisions as never, 'decisions')),
     settings: ((profile.data as { settings?: Record<string, unknown> } | null)?.settings ?? {}) as Record<string, unknown>,
     profileExists: Boolean(profile.data),
+    educationCount, activityCount, satSchools,
   };
 }

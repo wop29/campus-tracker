@@ -4,7 +4,7 @@
 import type { ReqCategory } from './logic/readiness.ts';
 
 /* ------------------------------------------------------------------ types */
-export type DegreeType = 'mba' | 'masters' | 'other';
+export type DegreeType = 'mba' | 'masters' | 'other' | 'undergrad';
 export type Sourced = { value: string; source_url: string | null };
 export type EnglishReq = {
   ielts_min: string | null; toefl_min: string | null; duolingo: string | null; pte_min: string | null;
@@ -37,11 +37,83 @@ export type Employment = {
   report_label: string | null; employed_3_months_pct: number | null; median_base_salary: string | null; mean_base_salary: string | null;
   top_industries: string | null; top_employers: string | null; international_employed_note: string | null; source_url: string | null; source_name: string | null;
 };
-export type Program = ProgramData & { id: string; collected_on: string; class_profile: ClassProfile | null; employment: Employment | null };
+export type Money = { amount: number; currency: string; basis: string | null; year: string | null; source_url: string | null };
+export type Cost = { tuition: Money | null; living: Money | null; notes: string | null };
+export type Scholarship = { name: string; amount: string | null; eligibility: string | null; international_ok: boolean | null; source_url: string | null };
+export type Lpdp = { on_list: boolean | null; list_name: string | null; notes: string | null; source_url: string | null };
+/** Optional extras other research passes may fill. All of them may be missing. */
+export type ProgramExtras = {
+  cost: Cost | null; fee_waiver: Sourced | null; scholarships: Scholarship[]; lpdp: Lpdp | null;
+  application_system: string | null; aid_policy: Sourced | null;
+  /** Caution flags read from the raw research notes before they are cleaned for display. */
+  paraphrased: { notes: boolean; essays: boolean };
+};
+export type Program = ProgramData & ProgramExtras & { id: string; collected_on: string; class_profile: ClassProfile | null; employment: Employment | null };
 
 export const PROGRAM_COLS = 'id, school_name, program_name, degree_type, format, duration, intake, program_url, data, collected_on, class_profile, employment';
 export const COLLECTED_ON_LABEL = '16 Nov 2026';
-export const DEGREE_LABEL: Record<DegreeType, string> = { mba: 'MBA', masters: "Master's", other: 'Other degree' };
+export const DEGREE_LABEL: Record<DegreeType, string> = { mba: 'MBA', masters: "Master's", other: 'Other degree', undergrad: "Bachelor's" };
+
+/* ------------------------------------------------------------------ cleaning research text for students */
+// Research notes sometimes describe how a page was read ("not in the fetched page text"). Students should never see that.
+const RESEARCH_NOISE: RegExp[] = [
+  /\bnot\s+(?:present|found|visible|captured|included|shown)\s+in\s+the\s+(?:retrievable\s+|fetched\s+|extracted\s+)?page/i,
+  /\bretrievable\b/i, /\bpage\s+labels?\s+(?:conflict|differ)/i, /\bfetched\b/i, /\bsnippets?\b/i, /\bpage\s+text\b/i,
+  /\bpage\s+extraction\b/i, /\bextraction\b/i, /\bnot\s+captured\b/i, /\bscrap(?:e|ed|er|ing)\b/i, /\bpage\s+body\b/i,
+  /\bsearch\s+results?\b/i, /\binternal\s+notes?\b/i,
+];
+const noisy = (s: string) => RESEARCH_NOISE.some((re) => re.test(s));
+/**
+ * Removes research-process remarks from text shown to students: a bracketed remark goes, a sentence that carries one goes,
+ * and a "; clause" that carries one goes (with the lower-case clause that depends on it). Returns null when nothing is left.
+ */
+export function sanitizeText(v: string | null | undefined): string | null {
+  if (typeof v !== 'string') return null;
+  let t = v.replace(/\s*\([^()]*\)/g, (m) => (noisy(m) ? '' : m)).replace(/\s*\[[^\[\]]*\]/g, (m) => (noisy(m) ? '' : m));
+  const sentences = t.split(/(?<=[.!?])\s+(?=[A-Z0-9'"(])/);
+  const kept: string[] = [];
+  for (const s of sentences) {
+    if (!noisy(s)) { kept.push(s); continue; }
+    const clauses = s.split(/;\s+/);
+    if (clauses.length < 2) continue;
+    const out: string[] = [];
+    let dropNext = false;
+    for (const c of clauses) {
+      if (noisy(c)) { dropNext = true; continue; }
+      if (dropNext && /^[a-z]/.test(c)) continue;
+      dropNext = false; out.push(c);
+    }
+    if (out.length) { let j = out.join('; ').trim(); if (!/[.!?]$/.test(j)) j += '.'; kept.push(j.charAt(0).toUpperCase() + j.slice(1)); }
+  }
+  t = kept.join(' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.;])/g, '$1').trim();
+  return t && /[A-Za-z0-9]/.test(t) ? t.slice(0, MAX_TEXT) : null;
+}
+const MAX_TEXT = 4000;
+
+/* ------------------------------------------------------------------ money */
+// TODO: these are fixed planning rates, not live rates. Update them by hand now and then (last set Nov 2026).
+// We never fetch live rates: the figure is labelled "approx." wherever it is shown.
+export const IDR_PER_USD = 16500;
+export const IDR_PER: Record<string, number> = {
+  IDR: 1, USD: IDR_PER_USD, GBP: 21500, EUR: 18500, AUD: 10600, CAD: 11800, SGD: 12600, HKD: 2120, CHF: 19800,
+};
+export const IDR_RATE_NOTE = 'Approx., at today\'s rate we set (not a live rate). Rates change.';
+/** Amount in rupiah at our fixed planning rate, or null when we have no rate for the currency. */
+export function toIdr(amount: number, currency: string): number | null {
+  const rate = IDR_PER[currency.toUpperCase()];
+  return rate && Number.isFinite(amount) ? Math.round(amount * rate) : null;
+}
+/** "Rp 1.2 billion", "Rp 450 million", "Rp 75,000". */
+export function formatIdr(n: number): string {
+  const a = Math.abs(n);
+  const short = (x: number) => (x >= 100 ? Math.round(x).toString() : x.toFixed(1).replace(/\.0$/, ''));
+  if (a >= 1e9) return `Rp ${short(n / 1e9)} billion`;
+  if (a >= 1e6) return `Rp ${short(n / 1e6)} million`;
+  return `Rp ${Math.round(n).toLocaleString('en-US')}`;
+}
+export function formatMoney(m: Pick<Money, 'amount' | 'currency'>): string {
+  return `${m.currency} ${m.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
 
 /* ------------------------------------------------------------------ defensive parsing */
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -58,17 +130,19 @@ export function safeUrl(v: unknown): string | null {
   const s = str(v);
   return s && /^https?:\/\/\S+$/i.test(s) ? s : null;
 }
+/** Text that will be shown to students: trimmed, then cleaned of research-process remarks. */
+const txt = (v: unknown): string | null => sanitizeText(str(v));
 function sourced(v: unknown): Sourced | null {
-  if (typeof v === 'string') { const s = str(v); return s ? { value: s, source_url: null } : null; }
+  if (typeof v === 'string') { const s = txt(v); return s ? { value: s, source_url: null } : null; }
   if (!isObj(v)) return null;
-  const value = str(v.value);
+  const value = txt(v.value);
   return value ? { value, source_url: safeUrl(v.source_url) } : null;
 }
 function english(v: unknown): EnglishReq | null {
   if (!isObj(v)) return null;
   const e: EnglishReq = {
-    ielts_min: str(v.ielts_min), toefl_min: str(v.toefl_min), duolingo: str(v.duolingo), pte_min: str(v.pte_min),
-    other_tests: str(v.other_tests), waiver: str(v.waiver), source_url: safeUrl(v.source_url),
+    ielts_min: txt(v.ielts_min), toefl_min: txt(v.toefl_min), duolingo: txt(v.duolingo), pte_min: txt(v.pte_min),
+    other_tests: txt(v.other_tests), waiver: txt(v.waiver), source_url: safeUrl(v.source_url),
   };
   return e.ielts_min || e.toefl_min || e.duolingo || e.pte_min || e.other_tests || e.waiver ? e : null;
 }
@@ -102,7 +176,7 @@ export function parseClassProfile(v: unknown): ClassProfile | null {
   if (!isObj(v)) return null;
   const out = { source_url: safeUrl(v.source_url) } as ClassProfile;
   for (const k of PROFILE_NUMS) out[k] = num(v[k]);
-  for (const k of PROFILE_STRS) out[k] = str(v[k]);
+  for (const k of PROFILE_STRS) out[k] = txt(v[k]);
   const hasData = PROFILE_NUMS.some((k) => out[k] != null) || ['gmat_range', 'gmat_focus_range', 'gre_range', 'gpa_range', 'work_exp_range'].some((k) => out[k as keyof ClassProfile] != null);
   return hasData ? out : null;
 }
@@ -111,9 +185,9 @@ export function parseEmployment(v: unknown): Employment | null {
   if (!isObj(v)) return null;
   const pct = num(v.employed_3_months_pct);
   const e: Employment = {
-    report_label: str(v.report_label), employed_3_months_pct: pct != null && pct >= 0 && pct <= 100 ? pct : null,
-    median_base_salary: str(v.median_base_salary), mean_base_salary: str(v.mean_base_salary), top_industries: str(v.top_industries),
-    top_employers: str(v.top_employers), international_employed_note: str(v.international_employed_note), source_url: safeUrl(v.source_url), source_name: str(v.source_name),
+    report_label: txt(v.report_label), employed_3_months_pct: pct != null && pct >= 0 && pct <= 100 ? pct : null,
+    median_base_salary: txt(v.median_base_salary), mean_base_salary: txt(v.mean_base_salary), top_industries: txt(v.top_industries),
+    top_employers: txt(v.top_employers), international_employed_note: txt(v.international_employed_note), source_url: safeUrl(v.source_url), source_name: txt(v.source_name),
   };
   return e.employed_3_months_pct != null || e.median_base_salary || e.mean_base_salary || e.top_industries || e.top_employers || e.international_employed_note ? e : null;
 }
@@ -122,7 +196,37 @@ export function parseDegreeType(v: unknown): DegreeType {
   const s = (str(v) ?? '').toLowerCase();
   if (s === 'mba') return 'mba';
   if (s === 'masters' || s === "master's" || s === 'master') return 'masters';
+  if (s === 'undergrad' || s === 'undergraduate' || s === 'bachelor' || s === "bachelor's" || s === 'bachelors') return 'undergrad';
   return 'other';
+}
+
+function money(v: unknown): Money | null {
+  if (!isObj(v)) return null;
+  const amount = num(v.amount);
+  const currency = (str(v.currency) ?? '').toUpperCase();
+  if (amount == null || amount <= 0 || !/^[A-Z]{3}$/.test(currency)) return null;
+  return { amount, currency, basis: txt(v.basis), year: txt(v.year), source_url: safeUrl(v.source_url) };
+}
+export function parseCost(v: unknown): Cost | null {
+  if (!isObj(v)) return null;
+  const c: Cost = { tuition: money(v.tuition), living: money(v.living), notes: txt(v.notes) };
+  return c.tuition || c.living || c.notes ? c : null;
+}
+export function parseScholarships(v: unknown): Scholarship[] {
+  if (!Array.isArray(v)) return [];
+  const out: Scholarship[] = [];
+  for (const s of v.slice(0, 30)) {
+    if (!isObj(s)) continue;
+    const name = txt(s.name);
+    if (!name) continue;
+    out.push({ name, amount: txt(s.amount), eligibility: txt(s.eligibility), international_ok: typeof s.international_ok === 'boolean' ? s.international_ok : null, source_url: safeUrl(s.source_url) });
+  }
+  return out;
+}
+export function parseLpdp(v: unknown): Lpdp | null {
+  if (!isObj(v)) return null;
+  const l: Lpdp = { on_list: typeof v.on_list === 'boolean' ? v.on_list : null, list_name: txt(v.list_name), notes: txt(v.notes), source_url: safeUrl(v.source_url) };
+  return l.on_list != null || l.notes ? l : null;
 }
 
 /** Reads one row defensively. Top-level columns win over the copy inside `data`. Returns null when unusable. */
@@ -132,16 +236,21 @@ export function parseProgram(row: ProgramRow | null | undefined): Program | null
   const program_name = str(row.program_name) ?? str(d.program_name);
   const school = str(row.school_name) ?? str(d.school);
   if (!program_name || !school) return null;
+  const rawNotes = str(d.notes);
   return {
     id: String(row.id), collected_on: str(row.collected_on) ?? '2026-11-16',
     school, program_name,
     degree_type: parseDegreeType(row.degree_type ?? d.degree_type),
-    format: str(row.format) ?? str(d.format), duration: str(row.duration) ?? str(d.duration), intake: str(row.intake) ?? str(d.intake),
+    format: txt(row.format) ?? txt(d.format), duration: txt(row.duration) ?? txt(d.duration), intake: txt(row.intake) ?? txt(d.intake),
     program_url: safeUrl(row.program_url) ?? safeUrl(d.program_url),
     deadlines: sourced(d.deadlines), application_fee: sourced(d.application_fee), tests: sourced(d.tests), english: english(d.english),
     essays: essays(d.essays), video_assessment: sourced(d.video_assessment), interview: sourced(d.interview),
-    recommendations: sourced(d.recommendations), other_requirements: sourced(d.other_requirements), notes: str(d.notes),
+    recommendations: sourced(d.recommendations), other_requirements: sourced(d.other_requirements), notes: txt(d.notes),
     class_profile: parseClassProfile(row.class_profile ?? d.class_profile), employment: parseEmployment(row.employment ?? d.employment),
+    // data.internal_notes is research-only and is deliberately never read here.
+    cost: parseCost(d.cost), fee_waiver: sourced(d.fee_waiver), scholarships: parseScholarships(d.scholarships), lpdp: parseLpdp(d.lpdp),
+    application_system: txt(d.application_system), aid_policy: sourced(d.aid_policy ?? d.financial_aid ?? d.international_aid),
+    paraphrased: { notes: isParaphrased(rawNotes), essays: /paraphras[^.]*(essay|prompt)|(essay|prompt)[^.]*paraphras/i.test(rawNotes ?? '') },
   };
 }
 export function parsePrograms(rows: unknown): Program[] {
@@ -152,34 +261,89 @@ export function parsePrograms(rows: unknown): Program[] {
 /* ------------------------------------------------------------------ English chips */
 const notAccepted = (s: string) => /^\s*not\s+accepted\b|^\s*no\s+longer\s+accepted\b|^\s*(?:the\s+school\s+)?does\s+not\s+accept\b/i.test(s);
 const notStated = (s: string) => /^not\s+(stated|specified|found|published|listed)\b/i.test(s);
+/** Takes out per-section minimums ("min 20 Listening", "6.5 each band") so only the overall score is left to read. */
+export function stripSectionScores(v: string): string {
+  return v
+    .replace(/\b(?:min(?:imum)?\.?\s*)?\d+(?:\.\d+)?\s*(?:in\s+|on\s+|for\s+)?(?:each|every|per|all|any)\s+(?:band|component|section|skill|sub-?score|module|area|subtest)s?\b/gi, ' ')
+    .replace(/\b(?:min(?:imum)?\.?\s*)?\d+(?:\.\d+)?\s*(?:in\s+|for\s+|on\s+)?(?:listening|speaking|reading|writing|literacy|comprehension|conversation|production)\b/gi, ' ')
+    .replace(/\b(?:listening|speaking|reading|writing)\s*:?\s*\d+(?:\.\d+)?/gi, ' ')
+    .replace(/\b(?:band|section|component|sub-?score|skill)s?\s*(?:score\s*)?(?:of\s*)?(?:at\s+least\s*|min(?:imum)?\.?\s*|below\s*|under\s*|less\s+than\s*)?\d+(?:\.\d+)?/gi, ' ');
+}
 /**
  * The published minimum from free text, or null when the page gives no single minimum.
  * "min 135" wins; "no minimum" or "equivalent to ..." give null; otherwise a leading number ("7.0 overall", "100 iBT", "iBT 100").
+ * Section minimums are ignored, so "100 iBT (min 20 Listening)" gives 100.
  */
-export function minimumScore(v: string): string | null {
-  const explicit = v.match(/\bmin(?:imum)?\.?\s*(?:score\s*)?(?:of\s*)?:?\s*(\d+(?:\.\d+)?)/i);
-  if (explicit) return explicit[1];
+export function minimumScore(raw: string): string | null {
+  const v = stripSectionScores(raw);
   if (/\bno\s+minimum|discourag|equivalent/i.test(v)) return null;
-  return v.match(/^\s*(?:accepted\s*\(\s*)?(?:iBT\s*)?(\d+(?:\.\d+)?)/i)?.[1] ?? null;
+  const explicit = v.match(/\bmin(?:imum)?\.?\s*(?:overall\s*)?(?:score\s*)?(?:of\s*)?:?\s*(\d+(?:\.\d+)?)/i);
+  if (explicit) return explicit[1];
+  return v.match(/^\s*(?:accepted\s*\(\s*)?(?:overall\s*)?(?:iBT\s*)?(\d+(?:\.\d+)?)/i)?.[1] ?? null;
 }
-function testChip(label: string, v: string | null): string | null {
-  if (!v || notStated(v)) return null;
-  if (notAccepted(v)) return `${label} not accepted`;
-  const n = minimumScore(v);
-  return n ? `${label} ${n}` : `${label} accepted`;
+export type EnglishTest = 'IELTS' | 'TOEFL' | 'Duolingo' | 'PTE';
+/** Valid overall score ranges. TOEFL also has the new 1-6 band scale (from Jan 2026). */
+export function validOverall(test: EnglishTest, n: number): boolean {
+  if (!Number.isFinite(n)) return false;
+  switch (test) {
+    case 'IELTS': return n >= 4 && n <= 9;
+    case 'TOEFL': return (n >= 60 && n <= 120) || (n >= 1 && n <= 6);
+    case 'Duolingo': return n >= 80 && n <= 160;
+    case 'PTE': return n >= 30 && n <= 90;
+  }
 }
-/** Short chips for the English test minimums: "IELTS 7.0", "TOEFL 100", "Duolingo 125" / "Duolingo not accepted" / "Duolingo not stated". */
-export function englishSummary(p: Pick<Program, 'english'>): string[] {
+export type ScoreRead = { kind: 'score'; value: string } | { kind: 'none' } | { kind: 'invalid' };
+/** The overall minimum for one test, checked against the test's real score range. */
+export function overallScore(test: EnglishTest, raw: string): ScoreRead {
+  const v = stripSectionScores(raw);
+  if (/\bno\s+minimum|discourag|equivalent/i.test(v)) return { kind: 'none' };
+  if (test === 'TOEFL') {
+    // Most students know the 0-120 iBT score, so prefer it when the text gives one.
+    const m = v.match(/\b(\d{2,3})\s*(?:\(\s*)?iBT\b|\biBT\s*(?:score\s*)?(?:of\s*)?:?\s*(\d{2,3})\b/i);
+    const n = m ? Number(m[1] ?? m[2]) : NaN;
+    if (m && validOverall('TOEFL', n) && n >= 60) return { kind: 'score', value: String(n) };
+  }
+  const s = minimumScore(raw);
+  if (!s) return { kind: 'none' };
+  return validOverall(test, Number(s)) ? { kind: 'score', value: s } : { kind: 'invalid' };
+}
+/** True when the school takes no English test at all (it judges English another way, such as the interview). */
+export function noEnglishTestNeeded(e: EnglishReq | null): boolean {
+  if (!e) return false;
+  const given = (v: string | null) => !!v && !notStated(v) && !notAccepted(v);
+  if (given(e.ielts_min) || given(e.toefl_min) || given(e.pte_min) || given(e.duolingo)) return false;
+  const text = [e.waiver, e.other_tests, e.duolingo].filter(Boolean).join(' ');
+  return /\bno\s+english\s+(?:language\s+)?(?:test|exam)\s+(?:is\s+)?(?:required|needed)|\bdoes\s+not\s+(?:accept|require)\s+(?:any\s+)?(?:ESL|english(?:\s+language)?\s+(?:test|proficiency|exam)|an\s+english)|\bdo(?:es)?\s+not\s+accept\s+(?:TOEFL|IELTS)|\bdoes\s+not\s+ask\s+for\s+(?:the\s+)?TOEFL|\bnot\s+require\s+an?\s+english\s+proficiency/i.test(text);
+}
+export type ChipTone = 'blue' | 'green' | 'neutral';
+export type EnglishChip = { text: string; tone: ChipTone; title?: string };
+const shorten = (s: string, n = 48) => (s.length > n ? `${s.slice(0, n).replace(/[\s,;:.]+\S*$/, '')}...` : s);
+function testChip(label: EnglishTest, v: string | null, keepNotStated = false): EnglishChip | null {
+  if (!v || notStated(v)) return keepNotStated ? { text: `${label} not stated`, tone: 'neutral' } : null;
+  if (notAccepted(v)) return { text: `${label} not accepted`, tone: 'neutral' };
+  const r = overallScore(label, v);
+  if (r.kind === 'score') return { text: `${label} ${r.value}${label === 'TOEFL' && Number(r.value) <= 6 ? ' (1-6 scale)' : ''}`, tone: 'blue', title: v };
+  if (r.kind === 'invalid') return { text: `${label}: ${shorten(v)}`, tone: 'neutral', title: v };
+  if (/accept/i.test(v) || label !== 'Duolingo') return { text: `${label} accepted`, tone: 'blue', title: v };
+  return { text: `${label} not stated`, tone: 'neutral' };
+}
+/**
+ * Chips for the English test rules, using the OVERALL score only: "IELTS 7.0", "TOEFL 100", "Duolingo 135".
+ * A school that takes no English test gets one green "No English test needed" chip.
+ */
+export function englishChips(p: Pick<Program, 'english'>): EnglishChip[] {
   const e = p.english;
-  if (!e) return ['English test not stated'];
-  const out: string[] = [];
-  for (const [label, v] of [['IELTS', e.ielts_min], ['TOEFL', e.toefl_min]] as const) { const c = testChip(label, v); if (c) out.push(c); }
-  const d = e.duolingo;
-  if (!d || notStated(d)) out.push('Duolingo not stated');
-  else if (notAccepted(d)) out.push('Duolingo not accepted');
-  else { const n = minimumScore(d); out.push(n ? `Duolingo ${n}` : /accept/i.test(d) ? 'Duolingo accepted' : 'Duolingo not stated'); }
-  const pte = testChip('PTE', e.pte_min); if (pte) out.push(pte);
+  if (!e) return [{ text: 'English test not stated', tone: 'neutral' }];
+  if (noEnglishTestNeeded(e)) return [{ text: 'No English test needed', tone: 'green', title: e.waiver ?? undefined }];
+  const out: EnglishChip[] = [];
+  for (const [label, v, keep] of [['IELTS', e.ielts_min, false], ['TOEFL', e.toefl_min, false], ['Duolingo', e.duolingo, true], ['PTE', e.pte_min, false]] as const) {
+    const c = testChip(label, v, keep); if (c) out.push(c);
+  }
   return out;
+}
+/** The chip texts only. */
+export function englishSummary(p: Pick<Program, 'english'>): string[] {
+  return englishChips(p).map((c) => c.text);
 }
 
 /* ------------------------------------------------------------------ checklist */
@@ -239,13 +403,15 @@ export function requirementChecklist(p: Program): ChecklistItem[] {
   const items: ChecklistItem[] = [];
   const fallbackUrl = p.program_url;
   const other = p.other_requirements;
+  const ug = p.degree_type === 'undergrad';
 
   // Tests
   if (p.tests) {
     const named = /\b(gmat|gre)\b/i.test(p.tests.value);
-    items.push({ key: 'tests', name: named ? 'GMAT/GRE' : 'Admissions test', category: 'tests', group: 'tests', detail: p.tests.value, source_url: p.tests.source_url ?? fallbackUrl, mandatory: !clearlyOptional(p.tests.value) });
+    const sat = /\b(?:SAT|ACT)\b/.test(p.tests.value);
+    items.push({ key: 'tests', name: ug ? (sat ? 'SAT/ACT' : 'Admissions test') : named ? 'GMAT/GRE' : 'Admissions test', category: 'tests', group: 'tests', detail: p.tests.value, source_url: p.tests.source_url ?? fallbackUrl, mandatory: !clearlyOptional(p.tests.value) });
   } else {
-    items.push({ key: 'tests', name: 'GMAT/GRE', category: 'tests', group: 'tests', detail: `Test policy: ${NOT_FOUND}`, source_url: fallbackUrl, mandatory: false });
+    items.push({ key: 'tests', name: ug ? 'Admissions test (SAT/ACT, if needed)' : 'GMAT/GRE', category: 'tests', group: 'tests', detail: `Test policy: ${NOT_FOUND}`, source_url: fallbackUrl, mandatory: false });
   }
   // English
   if (p.english) {
@@ -281,11 +447,11 @@ export function requirementChecklist(p: Program): ChecklistItem[] {
   }
   // Resume and transcripts (both come from other_requirements)
   const otherDetail = other ? other.value : NOT_FOUND;
-  items.push({ key: 'resume', name: 'Resume', category: 'resume', group: 'other', detail: otherDetail, source_url: other?.source_url ?? fallbackUrl, mandatory: true });
-  items.push({ key: 'transcripts', name: 'Academic transcripts', category: 'academics', group: 'other', detail: p.notes ? `${otherDetail}\nGood to know: ${p.notes}` : otherDetail, source_url: other?.source_url ?? fallbackUrl, mandatory: true });
+  items.push({ key: 'resume', name: ug ? 'Activities and achievements' : 'Resume', category: 'resume', group: 'other', detail: otherDetail, source_url: other?.source_url ?? fallbackUrl, mandatory: true });
+  items.push({ key: 'transcripts', name: ug ? 'School transcripts (rapor)' : 'Academic transcripts', category: 'academics', group: 'other', detail: p.notes ? `${otherDetail}\nGood to know: ${p.notes}` : otherDetail, source_url: other?.source_url ?? fallbackUrl, mandatory: true });
   // Fee and deadline
   items.push({ key: 'fee', name: 'Application fee', category: 'other', group: 'deadlines', detail: p.application_fee?.value ?? NOT_FOUND, source_url: p.application_fee?.source_url ?? fallbackUrl, mandatory: true });
-  items.push({ key: 'deadline', name: 'Pick your round and deadline', category: 'other', group: 'deadlines', detail: p.deadlines?.value ?? NOT_FOUND, source_url: p.deadlines?.source_url ?? fallbackUrl, mandatory: false });
+  items.unshift({ key: 'deadline', name: ug ? 'Pick your deadline' : 'Pick your round and deadline', category: 'other', group: 'deadlines', detail: p.deadlines?.value ?? NOT_FOUND, source_url: p.deadlines?.source_url ?? fallbackUrl, mandatory: true });
   return items;
 }
 
@@ -331,6 +497,97 @@ export function parseIntake(intake: string | null | undefined): string | null {
   const term = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
   return `${term} ${m[2]}`;
 }
+/* ------------------------------------------------------------------ application rounds */
+export type Round = { label: string; date: string; closed: boolean; daysLeft: number };
+const MONTH_INDEX: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+const monthOf = (m: string) => MONTH_INDEX[m.slice(0, 3).toLowerCase()];
+const DATE_RE = new RegExp(
+  `\\b(?:(${MONTHS})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?!\\d)(?:,?\\s+(20\\d{2}))?|(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTHS})\\.?,?(?:\\s+(20\\d{2}))?)\\b`, 'i');
+const ROUND_LABEL = /\b(Early\s+Action|Early\s+Decision|Round\s+(?:One|Two|Three|Four|Five|\d{1,2})|R\d{1,2}|Deferred\s+Admissions?|Rolling(?:\s*\((?:International|Intl\.?)\))?)\b/gi;
+const WORD_NUM: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5' };
+function tidyLabel(l: string): string {
+  const t = l.replace(/\s+/g, ' ').trim();
+  const r = t.match(/^R(?:ound)?\s*(\d{1,2}|one|two|three|four|five)$/i);
+  if (r) return `Round ${WORD_NUM[r[1].toLowerCase()] ?? r[1]}`;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+const ymd = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+/** First date in the text: [year or null, month, day]. Rejects impossible days. */
+function firstDate(text: string): { y: number | null; m: number; d: number } | null {
+  const m = text.match(DATE_RE);
+  if (!m) return null;
+  const month = monthOf(m[1] ?? m[5]);
+  const day = Number(m[2] ?? m[4]);
+  const year = m[3] ?? m[6];
+  if (month == null || day < 1 || day > 31) return null;
+  return { y: year ? Number(year) : null, m: month, d: day };
+}
+const dayNumber = (iso: string) => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86400000);
+/** Today's calendar date where the student is (not UTC), as YYYY-MM-DD. */
+export const localIso = (d: Date) => ymd(d.getFullYear(), d.getMonth(), d.getDate());
+
+/**
+ * Application rounds with dates, read from the deadlines text ("Round 1 Sep 9, 2026 (decision Dec 9, 2026); Round 2 ...").
+ * Each round's deadline is the first date after its label. A date without a year takes the year of the round before it
+ * (or the next year if that would go backwards). Text without round labels falls back to one deadline per "; " part.
+ * A round is closed once its deadline day has passed. Returns [] when no dates can be read.
+ */
+export function parseRounds(text: string | null | undefined, today: Date = new Date()): Round[] {
+  if (!text) return [];
+  const raw: { label: string; y: number | null; m: number; d: number }[] = [];
+  const labels = [...text.matchAll(ROUND_LABEL)];
+  // Programs with two intakes ("Aug 2027 intake: R1 ...; Jan 2028 intake: R1 ...") get the intake added to repeated labels.
+  const intakes = [...text.matchAll(new RegExp(`\\b((?:${MONTHS})\\.?\\s+20\\d{2})\\s+intake\\b`, 'gi'))];
+  if (labels.length) {
+    labels.forEach((l, i) => {
+      const end = i + 1 < labels.length ? labels[i + 1].index! : text.length;
+      const seg = text.slice(l.index! + l[0].length, end);
+      const lead = seg.split(/[;]|\.\s/)[0];
+      const date = firstDate(lead);
+      if (!date) return;
+      let label = tidyLabel(l[1]);
+      if (intakes.length > 1) {
+        const intake = [...intakes].reverse().find((x) => x.index! < l.index!);
+        if (intake) label = `${label} (${intake[1]} intake)`;
+      }
+      raw.push({ label, ...date });
+    });
+  } else {
+    text.split(/;\s*/).forEach((part, i, all) => {
+      const date = firstDate(part);
+      if (date && date.y != null) raw.push({ label: all.length > 1 ? `Deadline ${raw.length + 1}` : 'Deadline', ...date });
+      void i;
+    });
+  }
+  const out: Round[] = [];
+  const todayN = dayNumber(localIso(today));
+  let prev: { y: number; m: number } | null = null;
+  for (const r of raw) {
+    let y = r.y;
+    if (y == null) {
+      if (!prev) continue;
+      y = r.m < prev.m ? prev.y + 1 : prev.y;
+    }
+    const iso = ymd(y, r.m, r.d);
+    const n = dayNumber(iso);
+    if (!Number.isFinite(n)) continue;
+    prev = { y, m: r.m };
+    if (out.some((o) => o.label === r.label && o.date === iso)) continue;
+    out.push({ label: r.label, date: iso, closed: n < todayN, daysLeft: n - todayN });
+  }
+  return out;
+}
+/** The open round with the soonest deadline, or null when every round has closed (or none were read). */
+export function nextOpenRound(rounds: Round[]): Round | null {
+  return rounds.filter((r) => !r.closed).sort((a, b) => a.daysLeft - b.daysLeft)[0] ?? null;
+}
+/** "5 Jan 2027" from YYYY-MM-DD. */
+export function formatRoundDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]} ${y}`;
+}
+export const daysLeftText = (n: number) => (n === 0 ? 'closes today' : n === 1 ? '1 day left' : `${n} days left`);
+
 const SYMBOLS: [RegExp, string][] = [[/S\$/, 'SGD'], [/HK\$/, 'HKD'], [/C\$|CA\$/, 'CAD'], [/A\$|AU\$/, 'AUD'], [/£/, 'GBP'], [/€/, 'EUR'], [/¥|RMB/, 'CNY'], [/\$/, 'USD']];
 /** Fee amount and currency when the text names exactly one amount, else null (we never guess between several). */
 export function parseFee(value: string | null | undefined, currencies: readonly string[]): { amount: number; currency: string } | null {
@@ -343,9 +600,10 @@ export function parseFee(value: string | null | undefined, currencies: readonly 
   return currency && currencies.includes(currency) ? { amount: nums[0], currency } : null;
 }
 
-/** Programs the user can apply to on their track: grad users see MBA, master's and other degrees; the chosen program type first. */
+/** Programs the user can apply to on their track: grad users see MBA, master's and other degrees (chosen type first); undergrads see bachelor's programs. */
 export function programsForTrack(programs: Program[], track: 'grad' | 'undergrad', preferred?: 'mba' | 'masters' | 'phd'): Program[] {
-  if (track === 'undergrad') return [];
+  if (track === 'undergrad') return programs.filter((p) => p.degree_type === 'undergrad').sort((a, b) => a.program_name.localeCompare(b.program_name));
+  programs = programs.filter((p) => p.degree_type !== 'undergrad');
   const rank = (d: DegreeType) => (preferred && d === preferred ? 0 : d === 'mba' ? 1 : d === 'masters' ? 2 : 3);
   return [...programs].sort((a, b) => rank(a.degree_type) - rank(b.degree_type) || a.program_name.localeCompare(b.program_name));
 }

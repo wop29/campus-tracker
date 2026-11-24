@@ -4,12 +4,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { must } from '@/lib/hooks';
 import type { AchievementRow, EducationRow, GoalsRow, LeadershipRow, ProfileRow, TestRow, WorkRow } from '@/lib/profile';
-import type { SchoolDataRow } from '@/lib/competitiveness';
+import type { EssayLite, RecommenderLite, SchoolDataRow } from '@/lib/competitiveness';
+import { parseOnboarding, type Program, type Track } from '@/lib/onboarding';
+import { words } from '@/lib/profile';
 
 export interface SnapshotRow { id: string; created_at: string; model: string | null; result: { dimensions?: { key: string; label: string; score: number | null; confidence: string | null }[]; narrative?: string } }
 export interface ProfileData {
   profile: ProfileRow | null; education: EducationRow[]; tests: TestRow[]; work: WorkRow[]; leadership: LeadershipRow[]; achievements: AchievementRow[];
   goals: GoalsRow | null; schoolData: SchoolDataRow[]; snapshots: SnapshotRow[];
+  /** From onboarding: drives wording, defaults and which dimensions are scored. */
+  track: Track; program?: Program; essays: EssayLite[]; recommenders: RecommenderLite[];
 }
 
 export async function currentUserId(sb: SupabaseClient): Promise<string> {
@@ -20,7 +24,7 @@ export async function currentUserId(sb: SupabaseClient): Promise<string> {
 
 async function load(sb: SupabaseClient): Promise<ProfileData> {
   const live = <T,>(t: string, order: string, asc = false) => must(sb.from(t).select('*').is('deleted_at', null).order(order, { ascending: asc, nullsFirst: false })) as Promise<T[]>;
-  const [profile, education, tests, work, leadership, achievements, goals, sdata, snaps] = await Promise.all([
+  const [profile, education, tests, work, leadership, achievements, goals, sdata, snaps, essays, recs] = await Promise.all([
     must(sb.from('applicant_profiles').select('*').maybeSingle()) as Promise<ProfileRow | null>,
     live<EducationRow>('education_records', 'graduation_date'),
     live<TestRow>('test_scores', 'test_date'),
@@ -30,8 +34,14 @@ async function load(sb: SupabaseClient): Promise<ProfileData> {
     must(sb.from('career_goals').select('*').maybeSingle()) as Promise<GoalsRow | null>,
     must(sb.from('school_admissions_data').select('*, schools!inner(name, deleted_at)').is('schools.deleted_at', null)) as Promise<(SchoolDataRow & { schools: { name: string } })[]>,
     must(sb.from('ai_assessments').select('id, created_at, model, result').eq('kind', 'profile').order('created_at', { ascending: false }).limit(5)) as Promise<SnapshotRow[]>,
+    must(sb.from('essays').select('id, status, draft').is('deleted_at', null)) as Promise<{ id: string; status: string; draft: string | null }[]>,
+    must(sb.from('recommenders').select('id, recommendations(status)').is('deleted_at', null)) as Promise<{ id: string; recommendations: { status: string }[] | null }[]>,
   ]);
-  return { profile, education, tests, work, leadership, achievements, goals, snapshots: snaps, schoolData: sdata.map((r) => ({ ...r, school_name: r.schools.name })) };
+  const ob = parseOnboarding(profile?.settings);
+  return { track: ob.track, ...(ob.program ? { program: ob.program } : {}),
+    essays: essays.map((e) => ({ id: e.id, status: e.status, words: words(e.draft) })),
+    recommenders: recs.map((r) => ({ id: r.id, statuses: (r.recommendations ?? []).map((x) => x.status) })),
+    profile, education, tests, work, leadership, achievements, goals, snapshots: snaps, schoolData: sdata.map((r) => ({ ...r, school_name: r.schools.name })) };
 }
 
 export function useProfileData() {

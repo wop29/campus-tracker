@@ -13,7 +13,11 @@ export type JourneyData = {
   interview: { completedSessions: number; feedback: number };
   funding: { scholarships: number; expenses: number; scenarios: number };
   decide: { checklistStarted: number; submitted: number; decisionsRecorded: number; offersCompared: number };
+  /** Optional: the user's active-track applications, oldest first, so steps can name the school ("Set the deadline for Duke Fuqua"). */
+  apps?: JourneyApp[];
 };
+/** One application as the journey sees it. name is the school's short name (or full name). */
+export type JourneyApp = { id: string; name: string; hasDeadline: boolean; submitted: boolean };
 export const EMPTY_JOURNEY_DATA: JourneyData = {
   profile: { education: 0, work: 0, leadership: 0, achievements: 0, tests: 0, careerGoalsComplete: false, stories: 0 },
   schools: { inPortfolio: 0, withTier: 0, sourcedPoints: 0, comparisons: 0 },
@@ -48,8 +52,50 @@ function copyFor(p: JourneyProfile) {
   };
 }
 
+/** "Set the deadline for Duke Fuqua": names the first unsubmitted application that has no deadline yet. */
+function deadlineTitle(d: JourneyData): string {
+  const apps = d.apps ?? [];
+  const app = apps.find((a) => !a.hasDeadline && !a.submitted) ?? apps.find((a) => !a.hasDeadline);
+  if (app) return `Set the deadline for ${app.name}`;
+  return apps.length === 1 ? `Set the deadline for ${apps[0].name}` : 'Set a deadline for your application';
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Track filtering. An application belongs to a track when its program name says so; unclear names count for both
+// tracks, so a student is never blocked by a program name we cannot read.
+const UNDERGRAD_RE = /\b(bachelor'?s?|undergrad(uate)?|b\.?\s?a\.?|b\.?\s?sc?\.?|bcom|b\.?\s?eng|beng|freshman|first[- ]year|foundation)\b/i;
+const GRAD_RE = /\b(mba|emba|master'?s?|m\.?\s?sc?\.?|msc|mim|m\.?\s?eng|meng|mphil|mpp|mpa|llm|ph\.?\s?d|doctora(te|l)|postgrad(uate)?|graduate)\b/i;
+/** 'grad' or 'undergrad' when the program name makes it clear, else null. */
+export function programTrack(program: string | null | undefined): Track | null {
+  const p = (program ?? '').trim();
+  if (!p) return null;
+  const ug = UNDERGRAD_RE.test(p), gr = GRAD_RE.test(p);
+  return ug && !gr ? 'undergrad' : gr && !ug ? 'grad' : null;
+}
+export const inTrack = (program: string | null | undefined, track: Track) => { const t = programTrack(program); return t === null || t === track; };
+
+export type RawJourneyApp = { id: string; program: string | null; schoolName: string; hasDeadline: boolean; submitted: boolean; createdAt?: string };
+export type RawJourneyEssay = { id: string; application_id: string | null; hasDraft: boolean };
+/**
+ * Applications and essays that count for the user's track. An essay counts when it is linked to an application on the
+ * active track, or when it is not linked to any application yet (a personal statement written before picking schools).
+ * Essays linked to another track's application (for example MBA essays on an undergrad path) never count.
+ */
+export function trackScope(apps: RawJourneyApp[], essays: RawJourneyEssay[], track: Track) {
+  const active = apps.filter((a) => inTrack(a.program, track)).sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  const activeIds = new Set(active.map((a) => a.id));
+  const counted = essays.filter((e) => (e.application_id ? activeIds.has(e.application_id) : true));
+  return {
+    apps: active.map((a): JourneyApp => ({ id: a.id, name: a.schoolName, hasDeadline: a.hasDeadline, submitted: a.submitted })),
+    applications: { total: active.length, withDeadline: active.filter((a) => a.hasDeadline).length },
+    submitted: active.filter((a) => a.submitted).length,
+    essays: { total: counted.length, withDraft: counted.filter((e) => e.hasDraft).length },
+  };
+}
+
 /** The tailored path. Same five-unit skeleton for everyone, with wording for grad or undergrad applicants. */
-export function buildUnits(p: JourneyProfile = DEFAULT_JOURNEY_PROFILE): UnitDef[] {
+/** data is only used for wording that names an application ("Set the deadline for Duke Fuqua"). */
+export function buildUnits(p: JourneyProfile = DEFAULT_JOURNEY_PROFILE, data: JourneyData = EMPTY_JOURNEY_DATA): UnitDef[] {
   const c = copyFor(p);
   return [
     { id: 'about-you', title: 'About you', blurb: 'A few basics so we can help.', color: 'green', lessons: [
@@ -58,11 +104,11 @@ export function buildUnits(p: JourneyProfile = DEFAULT_JOURNEY_PROFILE): UnitDef
     ] },
     { id: 'pick-schools', title: 'Pick schools', blurb: 'A short list beats a perfect one.', color: 'blue', lessons: [
       { id: 'add-schools', title: 'Add 3 schools to your list', hint: c.schoolsHint, href: '/schools', measure: (d) => atLeast(d.schools.inPortfolio, 3) },
-      { id: 'mark-tier', title: 'Mark a dream or target school', hint: 'Just pick one. It helps you plan.', href: '/schools', measure: (d) => atLeast(d.schools.withTier, 1) },
+      { id: 'mark-tier', title: 'Mark a dream or target school', hint: 'Just pick one. It helps you plan.', href: '/schools?view=mine', measure: (d) => atLeast(d.schools.withTier, 1) },
     ] },
     { id: 'plan', title: 'Plan', blurb: 'Turn one school into a plan.', color: 'orange', lessons: [
       { id: 'create-app', title: 'Create one application', hint: 'Pick a school and a round or intake.', href: '/applications', measure: (d) => atLeast(d.applications.total, 1) },
-      { id: 'set-deadline', title: 'Set its deadline', hint: 'Copy the date from the school website.', href: '/applications', measure: (d) => atLeast(d.applications.withDeadline, 1) },
+      { id: 'set-deadline', title: deadlineTitle(data), hint: 'Copy the date from the school website.', href: '/applications', measure: (d) => atLeast(d.applications.withDeadline, 1) },
     ] },
     { id: 'write', title: 'Write', blurb: 'Small drafts add up.', color: 'pink', lessons: [
       { id: 'create-essay', title: `Create your ${c.essay}`, hint: c.essayHint, href: '/essays', measure: (d) => atLeast(d.essays.total, 1) },
@@ -83,16 +129,17 @@ export function skippedUnitCount(stage: Stage): number {
 }
 
 export type LessonState = 'done' | 'current' | 'upcoming' | 'skipped';
-export type Lesson = { id: string; title: string; hint: string; href: string; state: LessonState; current: number; target: number };
+/** number is the 1-based position among the lessons that count (not skipped); null for skipped lessons. */
+export type Lesson = { id: string; title: string; hint: string; href: string; state: LessonState; current: number; target: number; number: number | null };
 /** total counts only lessons that are not skipped; skipped is how many optional lessons were skipped in this unit. */
 export type Unit = { id: string; title: string; blurb: string; color: UnitDef['color']; index: number; lessons: Lesson[]; doneCount: number; total: number; skipped: number; pct: number; crowned: boolean };
-/** step is the 1-based step the user is on ("Step 3 of 10"); data is the raw input so pages can recompute for a profile. */
+/** step is the number of the current lesson ("Step 3 of 10", the same number the path shows); data is the raw input so pages can recompute for a profile. */
 export type Journey = { units: Unit[]; overallPct: number; doneCount: number; total: number; step: number; skipped: number; currentLessonId: string | null; currentUnitId: string | null; profile: JourneyProfile; data: JourneyData };
 
 export function computeJourney(data: JourneyData, profile: JourneyProfile = DEFAULT_JOURNEY_PROFILE): Journey {
   let currentId: string | null = null, currentUnit: string | null = null;
   const skipBefore = skippedUnitCount(profile.stage);
-  const units: Unit[] = buildUnits(profile).map((u, index) => {
+  const units: Unit[] = buildUnits(profile, data).map((u, index) => {
     const lessons: Lesson[] = u.lessons.map((l) => {
       const m = l.measure(data), done = m.current >= m.target;
       let state: LessonState;
@@ -100,7 +147,7 @@ export function computeJourney(data: JourneyData, profile: JourneyProfile = DEFA
       else if (index < skipBefore) state = 'skipped';
       else if (currentId === null) { currentId = l.id; currentUnit = u.id; state = 'current'; }
       else state = 'upcoming';
-      return { id: l.id, title: l.title, hint: l.hint, href: l.href, state, current: m.current, target: m.target };
+      return { id: l.id, title: l.title, hint: l.hint, href: l.href, state, current: m.current, target: m.target, number: null };
     });
     const doneCount = lessons.filter((l) => l.state === 'done').length;
     const skipped = lessons.filter((l) => l.state === 'skipped').length;
@@ -109,8 +156,22 @@ export function computeJourney(data: JourneyData, profile: JourneyProfile = DEFA
   });
   const doneCount = units.reduce((s, u) => s + u.doneCount, 0), total = units.reduce((s, u) => s + u.total, 0);
   const skipped = units.reduce((s, u) => s + u.skipped, 0);
+  // One numbering for the banner and the path: skipped lessons get no number, every other lesson is numbered in order.
+  let num = 0;
+  for (const u of units) for (const l of u.lessons) if (l.state !== 'skipped') l.number = ++num;
+  const currentLesson = units.flatMap((u) => u.lessons).find((l) => l.id === currentId);
   return {
-    units, overallPct: total ? Math.round((doneCount / total) * 100) : 100, doneCount, total, step: Math.max(1, Math.min(doneCount + 1, total)), skipped,
+    units, overallPct: total ? Math.round((doneCount / total) * 100) : 100, doneCount, total, step: currentLesson?.number ?? Math.max(1, total), skipped,
     currentLessonId: currentId, currentUnitId: currentUnit, profile, data,
   };
+}
+
+/** The single "do this next" step that Journey, Overview and the Overview strip all show. null when the path is complete. */
+export type NextStep = { id: string; title: string; hint: string; href: string; step: number; total: number; unitTitle: string | null; current: number; target: number };
+export function nextStep(j: Journey): NextStep | null {
+  for (const u of j.units) for (const l of u.lessons) {
+    if (l.id !== j.currentLessonId) continue;
+    return { id: l.id, title: l.title, hint: l.hint, href: l.href, step: l.number ?? j.step, total: j.total, unitTitle: u.title, current: l.current, target: l.target };
+  }
+  return null;
 }

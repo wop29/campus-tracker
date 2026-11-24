@@ -13,7 +13,7 @@ const SOFT: Record<string, string> = { green: 'bg-fun-green/15', blue: 'bg-fun-b
 function Node({ lesson, unit, n, pose }: { lesson: Lesson; unit: Unit; n: number; pose: MascotPose }) {
   const offset = [0, 32, 56, 32][n % 4];
   const done = lesson.state === 'done', current = lesson.state === 'current', skipped = lesson.state === 'skipped';
-  const status = done ? 'done' : current ? 'do this next' : skipped ? 'skipped, optional' : 'not done yet';
+  const status = `${lesson.number ? `Step ${lesson.number}, ` : ''}${done ? 'done' : current ? 'do this next' : skipped ? 'skipped, optional' : 'not done yet'}`;
   return (
     <li className="relative" style={{ marginLeft: offset }}>
       <Link href={lesson.href} aria-label={`${lesson.title}, ${status}`} className="group flex items-center gap-3 rounded-2xl p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
@@ -21,7 +21,7 @@ function Node({ lesson, unit, n, pose }: { lesson: Lesson; unit: Unit; n: number
         <span className={cn('flex shrink-0 items-center justify-center rounded-full border-b-4 text-on-fun transition-transform group-hover:-translate-y-0.5',
           current ? 'h-16 w-16 ring-4 ring-offset-2 ring-fun-yellow ' + FILL[unit.color] : 'h-14 w-14',
           done ? FILL[unit.color] : !current && (skipped ? 'border-dashed border-line/40 bg-bg text-secondary' : 'border-line/40 bg-border text-secondary'))}>
-          {done ? <Check size={26} strokeWidth={3} aria-hidden /> : skipped ? <SkipForward size={20} aria-hidden /> : <span className="text-lg font-extrabold">{n + 1}</span>}
+          {done ? <Check size={26} strokeWidth={3} aria-hidden /> : skipped ? <SkipForward size={20} aria-hidden /> : <span className="text-lg font-extrabold">{lesson.number ?? ''}</span>}
         </span>
         <span className="min-w-0">
           <span className={cn('block text-sm font-extrabold', (done || skipped) && 'text-secondary')}>{lesson.title}</span>

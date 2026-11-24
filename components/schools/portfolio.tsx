@@ -8,7 +8,8 @@ import { useQuery, must } from '@/lib/hooks';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { TIERS, TIER_LABEL } from '@/lib/constants';
 import { FIELD_CATALOGUE } from '@/lib/schools';
-import { SCHOOL_COLS, SchoolsNav, TIER_NOTE, type SchoolRow } from './shared';
+import { SCHOOL_COLS, TIER_NOTE, type SchoolRow } from './shared';
+import { CatalogueNav } from './catalogue-nav';
 import { SchoolFormModal } from './school-form';
 
 type SortKey = 'name' | 'priority' | 'tier' | 'researched';
@@ -19,7 +20,7 @@ export function PortfolioList({ portfolioOnly }: { portfolioOnly: boolean }) {
   const schools = useQuery<SchoolRow[]>((sb) => sb.from('schools').select(SCHOOL_COLS).is('deleted_at', null).order('name'), []);
   const points = useQuery<{ school_id: string; field: string }[]>((sb) => sb.from('school_admissions_data').select('school_id, field'), []);
   const [q, setQ] = useState(''); const [country, setCountry] = useState(''); const [tier, setTier] = useState(''); const [pf, setPf] = useState(''); const [prio, setPrio] = useState(''); const [sort, setSort] = useState<SortKey>('name');
-  const [adding, setAdding] = useState(false); const [busy, setBusy] = useState<Set<string>>(new Set()); const [seeding, setSeeding] = useState(false);
+  const [adding, setAdding] = useState(false); const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const counts = useMemo(() => { const m = new Map<string, number>(); (points.data ?? []).forEach((p) => m.set(p.school_id, (m.get(p.school_id) ?? 0) + 1)); return m; }, [points.data]);
   const countries = useMemo(() => [...new Set((schools.data ?? []).map((s) => s.country).filter(Boolean) as string[])].sort(), [schools.data]);
@@ -38,18 +39,14 @@ export function PortfolioList({ portfolioOnly }: { portfolioOnly: boolean }) {
   async function remove(s: SchoolRow) {
     try { await must(supabaseBrowser().from('schools').update({ deleted_at: new Date().toISOString() }).eq('id', s.id).select('id')); toast(`${s.name} removed`); await schools.reload(); } catch (e) { toast((e as Error).message, 'err'); }
   }
-  async function seed() {
-    if (seeding) return; setSeeding(true);
-    try { const { data, error } = await supabaseBrowser().rpc('seed_my_schools'); if (error) throw new Error(error.message); toast(`${data ?? 0} schools added (names and locations only)`); await schools.reload(); } catch (e) { toast((e as Error).message, 'err'); } finally { setSeeding(false); }
-  }
 
   const total = schools.data?.length ?? 0;
   return (
     <div>
-      <PageHeader title="School Portfolio" subtitle="Research schools, classify them and build your shortlist." actions={<Button onClick={() => setAdding(true)}><Plus size={14} /> Add school</Button>} />
-      <SchoolsNav active={portfolioOnly ? 'portfolio' : 'all'} />
+      <PageHeader title="My list" subtitle="The universities you picked. Mark your dream and target schools and set priorities." actions={<Button variant="secondary" onClick={() => setAdding(true)} className="min-h-11"><Plus size={14} aria-hidden /> Add your own</Button>} />
+      <CatalogueNav active="mine" />
       {schools.loading && !schools.data ? <Loading /> : schools.error ? <ErrorBox message={schools.error} onRetry={() => void schools.reload()} /> : total === 0 ? (
-        <EmptyState title="No schools yet" hint="Add a school, or load a starter list of candidate schools. The starter list has names, countries and cities only. No statistics are included." action={<div className="flex justify-center gap-2"><Button onClick={() => setAdding(true)}>Add school</Button><Button variant="secondary" onClick={seed} disabled={seeding}>{seeding ? 'Loading...' : 'Load starter list'}</Button></div>} />
+        <EmptyState pose="search" title="Your list is empty" hint="Pick universities we have already researched, or add one you like yourself." action={<div className="flex flex-wrap justify-center gap-2"><Link href="/schools?view=find" className="btn-3d inline-flex min-h-11 items-center rounded-2xl border-2 border-b-4 border-fun-green-dark bg-fun-green px-4 text-sm font-bold text-on-fun">Find universities</Link><Button variant="secondary" onClick={() => setAdding(true)} className="min-h-11">Add a university yourself</Button></div>} />
       ) : (
         <>
           <Card className="mb-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -61,7 +58,7 @@ export function PortfolioList({ portfolioOnly }: { portfolioOnly: boolean }) {
             <Select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}><option value="name">Sort: name</option><option value="priority">Sort: priority</option><option value="tier">Sort: tier</option><option value="researched">Sort: most researched</option></Select>
           </Card>
           <p className="mb-2 text-xs text-secondary">{TIER_NOTE} Priority 1 is highest. Showing {shown.length} of {portfolioOnly ? (schools.data ?? []).filter((s) => s.in_portfolio).length : total}.</p>
-          {shown.length === 0 ? <EmptyState title={portfolioOnly && !(schools.data ?? []).some((s) => s.in_portfolio) ? 'No schools in your portfolio yet' : 'No schools match these filters'} hint={portfolioOnly ? 'Tick "In portfolio" on a school in the All schools view to shortlist it.' : 'Clear a filter or add a school.'} action={portfolioOnly ? <Link href="/schools" className="text-sm text-accent underline">Go to all schools</Link> : undefined} /> : (
+          {shown.length === 0 ? <EmptyState title={portfolioOnly && !(schools.data ?? []).some((s) => s.in_portfolio) ? 'No schools in your portfolio yet' : 'No schools match these filters'} hint={portfolioOnly ? 'Tick "In portfolio" on a school in My list to shortlist it.' : 'Clear a filter, or find more universities.'} action={<Link href={portfolioOnly ? '/schools?view=mine' : '/schools?view=find'} className="text-sm font-bold text-accent underline">{portfolioOnly ? 'Go to My list' : 'Find universities'}</Link>} /> : (
             <div className="overflow-x-auto rounded-lg border bg-surface">
               <table className="w-full text-sm">
                 <thead className="border-b bg-bg text-left text-xs text-secondary"><tr><th className="p-2">School</th><th className="p-2">Tier</th><th className="p-2">Priority</th><th className="p-2">In portfolio</th><th className="p-2">Researched</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>

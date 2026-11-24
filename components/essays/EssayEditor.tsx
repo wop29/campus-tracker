@@ -8,7 +8,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { must, useQuery } from '@/lib/hooks';
 import { cn } from '@/lib/utils';
 import { countWords, wordLimitState } from '@/lib/logic/text';
-import { ESSAY_STATUSES, ESSAY_STATUS_LABEL, draftChanged, essayFormSchema, fieldErrors, type EssayRow, type EssayStatus, type EssayVersionRow } from '@/lib/essays';
+import { ESSAY_STATUSES, ESSAY_STATUS_LABEL, draftChanged, essayFormSchema, essaySubtitle, statusAfterSave, fieldErrors, type EssayRow, type EssayStatus, type EssayVersionRow } from '@/lib/essays';
 import { appLabel, errMsg, useSchoolsApps } from './data';
 import { AiEvalPanel } from './AiEvalPanel';
 import { StoryLinker } from './StoryLinker';
@@ -45,9 +45,10 @@ export function EssayEditor({ essayId }: { essayId: string }) {
     if (!draftChanged(essay.draft, text)) { toast('No changes to save, so no new version was created.'); return; }
     setSaving(true);
     try {
-      const row = await must(supabaseBrowser().from('essays').update({ draft: text, change_notes: notes.trim() || null }).eq('id', essay.id).select('id').maybeSingle());
+      const nextStatus = statusAfterSave(essay.status, text);
+      const row = await must(supabaseBrowser().from('essays').update({ draft: text, change_notes: notes.trim() || null, ...(nextStatus ? { status: nextStatus } : {}) }).eq('id', essay.id).select('id').maybeSingle());
       if (!row) throw new Error('The essay could not be updated. It may have been deleted.');
-      setNotes(''); toast('Draft saved as a new version'); await reloadAll();
+      setNotes(''); toast(nextStatus ? `Draft saved. Nice start, this essay is now "${ESSAY_STATUS_LABEL[nextStatus]}".` : 'Draft saved as a new version'); await reloadAll();
     } catch (e) { toast(errMsg(e), 'err'); } finally { setSaving(false); }
   }
   async function setStatus(s: EssayStatus) {
@@ -75,6 +76,9 @@ export function EssayEditor({ essayId }: { essayId: string }) {
   }
   const schoolApps = useMemo(() => apps.filter((a) => !details?.school_id || a.school_id === details.school_id), [apps, details?.school_id]);
 
+  const linkedApp = essay ? apps.find((a) => a.id === essay.application_id) : undefined;
+  const subtitle = essay ? essaySubtitle(schools.find((s) => s.id === essay.school_id)?.name, linkedApp ? { schoolName: linkedApp.schools?.name, program: linkedApp.program, intake: linkedApp.intake, round: linkedApp.round } : null) : '';
+
   if (essayQ.loading && !essay) return <Loading />;
   if (essayQ.error) return <ErrorBox message={essayQ.error} onRetry={essayQ.reload} />;
   if (!essay || !details) return <EmptyState title="Essay not found" hint="It may have been deleted." action={<Link className="text-accent underline" href="/essays">Back to essays</Link>} />;
@@ -85,7 +89,7 @@ export function EssayEditor({ essayId }: { essayId: string }) {
       <Link href="/essays" className="inline-flex items-center gap-1 text-sm text-secondary hover:text-primary"><ArrowLeft size={14} /> All essays</Link>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-xl font-semibold">{essay.title}</h1>
-          <p className="text-sm text-secondary">{[schools.find((s) => s.id === essay.school_id)?.name, apps.find((a) => a.id === essay.application_id) ? appLabel(apps.find((a) => a.id === essay.application_id)!) : null].filter(Boolean).join(' - ') || 'No school linked'}</p></div>
+          <p className="text-sm text-secondary">{subtitle}</p></div>
         <label className="flex items-center gap-2 text-sm">Status<Select aria-label="Essay status" className="w-44" value={essay.status} onChange={(e) => void setStatus(e.target.value as EssayStatus)}>{ESSAY_STATUSES.map((s) => <option key={s} value={s}>{ESSAY_STATUS_LABEL[s]}</option>)}</Select></label>
       </div>
       {essay.prompt && <Card className="bg-bg"><p className="text-xs font-medium text-secondary">Prompt</p><p className="whitespace-pre-line text-sm">{essay.prompt}</p></Card>}

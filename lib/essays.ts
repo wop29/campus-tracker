@@ -135,3 +135,22 @@ export const REVIEW_SECTIONS: { key: keyof z.infer<typeof reviewSchema>; label: 
   { key: 'missing', label: 'What is missing' }, { key: 'generic', label: 'Generic passages' }, { key: 'weakEvidence', label: 'Weak evidence' },
   { key: 'strongerStories', label: 'Stronger story options' },
 ];
+
+// ---------- status and labels ----------
+/**
+ * The status to store after a draft save. An essay that was "Not started" moves to "First draft" as soon as a save
+ * has real words in it; every other status is the student's own choice and is left alone. Null means "no change".
+ */
+export function statusAfterSave(current: EssayStatus, savedText: string): EssayStatus | null {
+  return current === 'not_started' && savedText.trim().length > 0 ? 'first_draft' : null;
+}
+
+/**
+ * The line under an essay title: the school once, then the application's own details (program, intake, round).
+ * Example: "Duke Fuqua · Full-time MBA, Fall 2027, Round 2". Falls back to the application's school when no school is linked.
+ */
+export function essaySubtitle(schoolName: string | null | undefined, app: { schoolName?: string | null; program?: string | null; intake?: string | null; round?: string | null } | null | undefined): string {
+  const school = (schoolName ?? '').trim() || (app?.schoolName ?? '').trim();
+  const details = app ? [app.program, app.intake, app.round].map((x) => (x ?? '').trim()).filter(Boolean).join(', ') : '';
+  return [school, details].filter(Boolean).join(' · ') || 'No school linked';
+}

@@ -123,3 +123,24 @@ test('AI prompt uses only supplied records and system forbids fabricating', () =
   assert.ok(empty.prompt.includes('No applicant records were selected'));
   assert.ok(!r.system.includes('—'));
 });
+
+import { statusAfterSave, essaySubtitle } from '../lib/essays.ts';
+import { recommenderCopy } from '../lib/recommendations.ts';
+test('essay status: first save with words moves Not started to First draft, nothing else changes', () => {
+  assert.equal(statusAfterSave('not_started', 'Hello world'), 'first_draft');
+  assert.equal(statusAfterSave('not_started', '   \n '), null);
+  assert.equal(statusAfterSave('revision', 'text'), null); assert.equal(statusAfterSave('brainstorming', 'text'), null); assert.equal(statusAfterSave('submitted', 'text'), null);
+});
+test('essay subtitle names the school once', () => {
+  const s = essaySubtitle('Duke Fuqua', { schoolName: 'Duke Fuqua', program: 'Full-time MBA', intake: 'Fall 2027', round: 'Round 2' });
+  assert.equal(s, 'Duke Fuqua · Full-time MBA, Fall 2027, Round 2'); assert.equal(s.split('Duke Fuqua').length, 2);
+  assert.equal(essaySubtitle(null, { schoolName: 'LBS', program: 'MBA', intake: '', round: null }), 'LBS · MBA');
+  assert.equal(essaySubtitle('INSEAD', null), 'INSEAD'); assert.equal(essaySubtitle(null, null), 'No school linked');
+  assert.ok(!/—/.test(s));
+});
+test('recommender copy follows the track', () => {
+  const u = recommenderCopy('undergrad'), g = recommenderCopy('grad'), d = recommenderCopy(undefined);
+  assert.equal(u.orgLabel, 'School or organisation'); assert.match(u.relationshipHint, /My maths teacher for 2 years/);
+  assert.equal(g.orgLabel, 'Company'); assert.match(g.relationshipHint, /Direct manager/); assert.deepEqual(d, g);
+  for (const c of [u, g]) for (const v of Object.values(c)) assert.ok(!/—|actually/i.test(v));
+});

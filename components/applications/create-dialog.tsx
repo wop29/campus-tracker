@@ -1,15 +1,23 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { must } from '@/lib/hooks';
 import { Button, Field, Input, Modal, Select, Textarea } from '@/components/ui';
-import { CURRENCIES, ApplicationSchema, NewApplicationSchema, TIMEZONES, wallToIso, zodFieldErrors, type Application, type FieldErrors, type School } from '@/lib/applications';
+import {
+  CURRENCIES, ApplicationSchema, NewApplicationSchema, TIMEZONES, applicationPlans, currencyForCountry, defaultIntake, defaultProgram, intakeOptions, timezoneForSchool, wallToIso, zodFieldErrors,
+  type Application, type FieldErrors, type School,
+} from '@/lib/applications';
+import { loadOnboarding } from '@/components/onboarding/data';
+import type { Onboarding } from '@/lib/onboarding';
 import { useAction } from './data';
 import { applyProgramChecklist, intakeFor } from './program-start';
 import { PROGRAM_COLS, parseFee, parsePrograms, type Program } from '@/lib/programs';
 
 type Form = { school_id: string; program: string; intake: string; round: string; priority: string; application_fee: string; fee_currency: string; stage: string; notes: string; deadline_date: string; deadline_time: string; deadline_tz: string };
-const blank = (school = ''): Form => ({ school_id: school, program: 'Full-time MBA', intake: 'Fall 2027', round: '', priority: '3', application_fee: '', fee_currency: 'USD', stage: 'researching', notes: '', deadline_date: '', deadline_time: '23:59', deadline_tz: 'America/New_York' });
+const blank = (school = ''): Form => ({ school_id: school, program: '', intake: '', round: '', priority: '3', application_fee: '', fee_currency: 'USD', stage: 'researching', notes: '', deadline_date: '', deadline_time: '23:59', deadline_tz: 'America/New_York' });
+/** Fields that follow the chosen school until the student edits them. */
+type AutoKey = 'program' | 'intake' | 'fee_currency' | 'deadline_tz';
+const OTHER = '__other__';
 
 export function ApplicationDialog({ open, onClose, schools, presetSchoolId, editing, onSaved }: {
   open: boolean; onClose: () => void; schools: School[]; presetSchoolId?: string | null; editing?: Application | null; onSaved: (id: string) => void;
@@ -19,22 +27,55 @@ export function ApplicationDialog({ open, onClose, schools, presetSchoolId, edit
   const [programs, setPrograms] = useState<string[]>([]);
   const [researched, setResearched] = useState<Program[]>([]);
   const [programId, setProgramId] = useState('');
+  const [ob, setOb] = useState<Onboarding | null>(null);
+  const [location, setLocation] = useState<string | null>(null);
+  const [intakeOther, setIntakeOther] = useState(false);
+  const touched = useRef<Set<keyof Form>>(new Set());
   const { busy, run } = useAction();
-  const set = (k: keyof Form, v: string) => setF((s) => ({ ...s, [k]: v }));
+  const set = (k: keyof Form, v: string) => { touched.current.add(k); setF((s) => ({ ...s, [k]: v })); };
+  const track = ob?.track ?? 'grad';
+  const school = schools.find((s) => s.id === f.school_id) ?? null;
+  const country = school?.country ?? null;
 
   useEffect(() => {
     if (!open) return;
-    setErrs({}); setProgramId('');
+    let live = true;
+    loadOnboarding(supabaseBrowser()).then((o) => { if (live) setOb(o); }).catch(() => { if (live) setOb(null); });
+    return () => { live = false; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setErrs({}); setProgramId(''); setIntakeOther(false); touched.current = new Set();
     if (editing) setF({ ...blank(editing.school_id), program: editing.program, intake: editing.intake, round: editing.round ?? '', priority: String(editing.priority), application_fee: editing.application_fee == null ? '' : String(editing.application_fee), fee_currency: editing.fee_currency, notes: editing.notes ?? '' });
     else setF(blank(presetSchoolId && schools.some((s) => s.id === presetSchoolId) ? presetSchoolId : ''));
   }, [open, editing, presetSchoolId, schools]);
 
   useEffect(() => {
-    if (!open || !f.school_id) { setPrograms([]); return; }
+    if (!open || !f.school_id) { setPrograms([]); setLocation(null); return; }
     let live = true;
-    void supabaseBrowser().from('school_programs').select('name').eq('school_id', f.school_id).then(({ data }) => { if (live) setPrograms(((data ?? []) as { name: string }[]).map((p) => p.name)); });
+    const sb = supabaseBrowser();
+    void sb.from('school_programs').select('name').eq('school_id', f.school_id).then(({ data }) => { if (live) setPrograms(((data ?? []) as { name: string }[]).map((p) => p.name)); });
+    void sb.from('schools').select('location').eq('id', f.school_id).maybeSingle().then(({ data }) => { if (live) setLocation((data as { location: string | null } | null)?.location ?? null); });
     return () => { live = false; };
   }, [open, f.school_id]);
+
+  // New applications: program, intake, currency and time zone follow the school and the student's track until edited by hand.
+  useEffect(() => {
+    if (!open || editing) return;
+    const auto: Record<AutoKey, string> = {
+      program: defaultProgram(track, programs, ob?.program),
+      intake: defaultIntake(country, ob?.intake),
+      fee_currency: currencyForCountry(country),
+      deadline_tz: timezoneForSchool(country, location),
+    };
+    setF((s) => {
+      const next = { ...s };
+      for (const k of Object.keys(auto) as AutoKey[]) if (!touched.current.has(k)) next[k] = auto[k];
+      if (track === 'undergrad' && !touched.current.has('round') && s.round && !applicationPlans(country).includes(s.round)) next.round = '';
+      return next;
+    });
+  }, [open, editing, track, programs, ob, country, location]);
 
   // Researched programs for the chosen school (matched by school name), offered as an optional checklist source.
   useEffect(() => {
@@ -52,6 +93,7 @@ export function ApplicationDialog({ open, onClose, schools, presetSchoolId, edit
     const p = researched.find((x) => x.id === id);
     if (!p) return;
     const fee = parseFee(p.application_fee?.value, CURRENCIES);
+    for (const k of ['program', 'intake', ...(fee ? ['fee_currency'] : [])] as (keyof Form)[]) touched.current.add(k);
     setF((s) => ({ ...s, program: p.program_name.slice(0, 120), intake: intakeFor(p, s.intake), ...(fee ? { application_fee: String(fee.amount), fee_currency: fee.currency } : {}) }));
   }
 
@@ -97,6 +139,10 @@ export function ApplicationDialog({ open, onClose, schools, presetSchoolId, edit
     if (ok && newId) { onSaved(newId); onClose(); }
   }
 
+  const intakeList = (() => { const l = intakeOptions(country); return f.intake && !l.includes(f.intake) ? [f.intake, ...l] : l; })();
+  const plans = applicationPlans(country);
+  const planList = f.round && !plans.includes(f.round) ? [f.round, ...plans] : plans;
+
   return (
     <Modal open={open} onClose={onClose} title={editing ? 'Edit application' : 'Add an application'} wide>
       <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="grid gap-3 sm:grid-cols-2" noValidate>
@@ -114,9 +160,28 @@ export function ApplicationDialog({ open, onClose, schools, presetSchoolId, edit
             </Select>
           </Field>
         )}
-        <Field label="Program" error={errs.program}><Input list="app-programs" value={f.program} onChange={(e) => set('program', e.target.value)} /><datalist id="app-programs">{programs.map((p) => <option key={p} value={p} />)}</datalist></Field>
-        <Field label="Intake" error={errs.intake}><Input value={f.intake} onChange={(e) => set('intake', e.target.value)} /></Field>
-        <Field label="Round" error={errs.round} hint="For example Round 1. Leave blank if the school has a single deadline."><Input value={f.round} onChange={(e) => set('round', e.target.value)} /></Field>
+        <Field label="Program" error={errs.program}><Input list="app-programs" value={f.program} onChange={(e) => set('program', e.target.value)} placeholder={track === 'undergrad' ? 'For example Bachelor of Computer Science' : 'For example MBA or MSc Finance'} /><datalist id="app-programs">{programs.map((p) => <option key={p} value={p} />)}</datalist></Field>
+        <Field label="Intake" error={errs.intake} hint={/semester/i.test(intakeList.join(' ')) ? 'Australian universities start in February (Semester 1) or July (Semester 2).' : undefined}>
+          {intakeOther
+            ? <Input value={f.intake} onChange={(e) => set('intake', e.target.value)} placeholder="For example Fall 2028" autoFocus />
+            : (
+              <Select value={f.intake} onChange={(e) => { if (e.target.value === OTHER) { setIntakeOther(true); return; } set('intake', e.target.value); }} aria-label="Intake">
+                {!f.intake && <option value="">Choose an intake</option>}
+                {intakeList.map((i) => <option key={i} value={i}>{i}</option>)}
+                <option value={OTHER}>Another intake...</option>
+              </Select>
+            )}
+        </Field>
+        {track === 'undergrad'
+          ? plans.length > 0 && (
+            <Field label="Application plan (optional)" error={errs.round} hint="You can change this later.">
+              <Select value={f.round} onChange={(e) => set('round', e.target.value)} aria-label="Application plan">
+                <option value="">Not sure yet</option>
+                {planList.map((p) => <option key={p} value={p}>{p}</option>)}
+              </Select>
+            </Field>
+          )
+          : <Field label="Round" error={errs.round} hint="For example Round 1. Leave blank if the school has a single deadline."><Input value={f.round} onChange={(e) => set('round', e.target.value)} /></Field>}
         <Field label="Priority (1 = highest)" error={errs.priority}><Select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</Select></Field>
         <Field label="Application fee" error={errs.application_fee}><Input inputMode="decimal" value={f.application_fee} onChange={(e) => set('application_fee', e.target.value)} placeholder="Leave blank if unknown" /></Field>
         <Field label="Fee currency"><Select value={f.fee_currency} onChange={(e) => set('fee_currency', e.target.value)}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</Select></Field>

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Download, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Download, XCircle } from 'lucide-react';
 import { z } from 'zod';
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader } from '@/components/ui';
 import { useToast } from '@/components/toast';
@@ -13,6 +13,8 @@ import { downloadFile } from '@/lib/export';
 import { ThemeSection } from '@/components/settings/theme-section';
 import { ImportSection } from '@/components/settings/import-section';
 import { RemindersSection } from '@/components/settings/reminders-section';
+import { useEmailConfigured } from '@/components/settings/use-email-status';
+import { aiEnabled } from '@/lib/features';
 import { HIGH_AT, MEDIUM_AT } from '@/lib/nba';
 import { titleCase } from '@/lib/utils';
 
@@ -40,10 +42,11 @@ export default function SettingsPage() {
   const s = parseSettings(data.settings);
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Settings" subtitle="Your preferences are stored in your account, not in this browser." />
+      <PageHeader title="Settings" subtitle="Your choices are saved to your account, so they follow you to any device." />
+      <ProfileSection onSaved={reload} />
       <ThemeSection />
       <RemindersSection />
-      <ProfileSection onSaved={reload} />
+      <AdvancedSection>
       <PlanningSection hours={s.workingHours} days={s.reminderDays} currency={s.baseCurrency} onSaved={reload} />
       <WeightsSection weights={s.weights} onSaved={reload} />
       <IntegrationSection />
@@ -58,7 +61,27 @@ export default function SettingsPage() {
           <li>Deadline risk: red if overdue, or too little time for the open mandatory items (assumed half a day each), or 3 days or less with any open; yellow within 14 days with open items.</li>
         </ul>
       </Section>
+      <Section title="Owner docs" hint="Setup guides in the project repository.">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-secondary">
+          <li>Email reminders: docs/REMINDERS.md</li>
+          <li>Moving data between projects: docs/MIGRATING.md</li>
+        </ul>
+      </Section>
+      </AdvancedSection>
     </div>
+  );
+}
+
+/** Developer and owner tools, collapsed by default so students only see what they need. */
+function AdvancedSection({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="group mt-8 rounded-xl border-2 bg-bg p-3">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-secondary [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={16} aria-hidden className="transition group-open:rotate-90" /> Advanced (for the app owner)
+      </summary>
+      <p className="mb-3 mt-1 text-xs text-secondary">Planning numbers, scoring, service status, and backup and restore. You do not need anything here to use the app.</p>
+      {children}
+    </details>
   );
 }
 
@@ -84,9 +107,9 @@ function ProfileSection({ onSaved }: { onSaved: () => void }) {
     if (await run(() => saveSettingsPatch(supabaseBrowser(), {}, { preferred_name: p.data || null }), 'Profile saved')) onSaved();
   };
   return (
-    <Section title="Profile">
+    <Section title="Profile" hint="The name we use to greet you in the app and in emails.">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Display name" error={err}><Input value={name} onChange={(e) => setName(e.target.value)} disabled={!ready} maxLength={80} /></Field>
+        <Field label="Your name" error={err}><Input value={name} onChange={(e) => setName(e.target.value)} disabled={!ready} maxLength={80} /></Field>
         <Field label="Email" hint="Managed by your sign-in account"><Input value={email} readOnly aria-readonly="true" className="bg-bg" /></Field>
       </div>
       <Button className="mt-3" onClick={save} disabled={saving || !ready}>{saving ? 'Saving...' : 'Save profile'}</Button>
@@ -148,6 +171,7 @@ function WeightsSection({ weights, onSaved }: { weights: Weights; onSaved: () =>
 }
 
 function IntegrationSection() {
+  const emailReady = useEmailConfigured();
   const [st, setSt] = useState<Status>(null);
   useEffect(() => { void fetch('/api/status').then(async (r) => setSt(r.ok ? await r.json() : { error: `Status check failed (${r.status})` })).catch((e) => setSt({ error: (e as Error).message })); }, []);
   const row = (label: string, ok: boolean | null, okText: string, offText: string) => (
@@ -162,11 +186,11 @@ function IntegrationSection() {
       {st && 'error' in st && <ErrorBox message={st.error} />}
       <ul className="divide-y">
         {row('Database and sign-in (Supabase)', ok ? ok.supabase : st ? false : null, 'Connected', 'Not reachable')}
-        {row('AI features (Anthropic)', ok ? ok.anthropic : st ? false : null, 'Configured', 'Not configured. Set ANTHROPIC_API_KEY on the server to enable AI features. Everything else keeps working.')}
-        {row('Email', false, '', 'Not configured. This app does not send email. Anything that would be an email is only drafted for you to copy and send yourself.')}
-        {row('Google Calendar', false, '', 'Not configured. No events are created or synced.')}
+        {row('AI features (Anthropic)', ok ? ok.anthropic && aiEnabled() : st ? false : null, 'On', ok?.anthropic ? 'Key found, but AI buttons are hidden. Set NEXT_PUBLIC_AI_ENABLED=1 to show them.' : 'Off. AI buttons are hidden from students. Needs ANTHROPIC_API_KEY and NEXT_PUBLIC_AI_ENABLED=1.')}
+        {row('Email reminders', emailReady, 'Connected. Reminder emails go out as described in Email reminders above.', `${emailReady === null ? 'Checking...' : 'Not connected. Students see: "Email reminders will start once the app owner connects an email service." See docs/REMINDERS.md.'}`)}
+        {row('Google Calendar', false, '', 'Not connected. No events are created or synced.')}
       </ul>
-      <p className="mt-2 text-xs text-secondary">Notifications are in-app only: they appear in the bell menu and on the Notifications page.</p>
+      <p className="mt-2 text-xs text-secondary">In-app notifications always work: they appear in the bell menu and on the Notifications page.</p>
     </Section>
   );
 }

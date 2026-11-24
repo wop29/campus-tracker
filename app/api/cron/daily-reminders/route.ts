@@ -1,4 +1,4 @@
-// Reminder emails for Campus Quest. Called by Vercel Cron (vercel.json, once a day at 12:00 UTC = 19:00 Jakarta)
+// Reminder emails for Campus Quest (never a daily email: most days most people get nothing). Called by Vercel Cron (vercel.json, once a day at 12:00 UTC = 19:00 Jakarta)
 // with "Authorization: Bearer <CRON_SECRET>". Most days most people get NO email: lib/reminders.ts decides, per user,
 // whether today is a deadline_week, result_soon, nudge or celebration day (at most one email, highest priority wins).
 // Safe to call more often: reminder_log has one row per user per local date and the row is claimed BEFORE sending,
@@ -8,7 +8,7 @@
 import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import { buildReminderFacts, composeReminder, decideReminder, isReminderDue, readReminderPrefs, safeTimeZone, type DueReason, type LogKind } from '@/lib/reminders';
+import { buildReminderFacts, composeReminder, decideReminder, firstName, isReminderDue, readReminderPrefs, safeTimeZone, type DueReason, type LogKind } from '@/lib/reminders';
 import { adminClient, loadAccountEmails, loadOnboardedProfiles } from '@/lib/email/reminder-data';
 import { HISTORY_DAYS, isMissingSchema, loadReminderHistory, loadReminderRows } from '@/lib/email/reminder-rows';
 import { emailProvider, sendEmails, type OutgoingEmail } from '@/lib/email/send';
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
       const mine = rows.get(d.p.user_id);
       if (!mine) continue;
       // Signing up counts as the first sign of life, so a brand new account is not treated as "silent forever".
-      const facts = buildReminderFacts({ ...mine, activityAt: [...mine.activityAt, d.p.created_at] }, { userId: d.p.user_id, name: d.p.preferred_name || d.p.full_name?.split(/\s+/)[0] || null, timezone: d.tz }, now);
+      const facts = buildReminderFacts({ ...mine, activityAt: [...mine.activityAt, d.p.created_at] }, { userId: d.p.user_id, name: firstName(d.p.preferred_name, d.p.full_name), timezone: d.tz }, now);
       const decision = decideReminder(facts);
       const unsub = secret ? unsubscribeUrl(base, d.p.user_id, secret) : `${base}/settings`;
       const email = composeReminder(decision, facts, { appUrl: base, unsubscribeUrl: unsub, seed: `${d.p.user_id}:${d.localDate}` });

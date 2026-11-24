@@ -7,11 +7,14 @@ import { must, useQuery } from '@/lib/hooks';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { CATEGORY_LABEL, NOTIFICATIONS_CHANGED, NOTIFICATION_CATEGORIES } from '@/lib/notifications';
 import { fmtDateTime } from '@/lib/utils';
+import { EMAIL_NOT_CONNECTED, EMAIL_PROMISE } from '@/lib/reminders';
+import { useEmailConfigured } from '@/components/settings/use-email-status';
 
 type N = { id: string; category: string; title: string; body: string | null; link: string | null; read_at: string | null; created_at: string };
 
 export default function NotificationsPage() {
   const toast = useToast();
+  const emailReady = useEmailConfigured();
   const q = useQuery<N[]>((sb) => sb.from('notifications').select('id,category,title,body,link,read_at,created_at').order('created_at', { ascending: false }).limit(500), []);
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState<'all' | 'unread'>('all');
@@ -42,7 +45,10 @@ export default function NotificationsPage() {
 
   return (
     <div>
-      <PageHeader title="Notifications" subtitle="In-app only. No emails or calendar events are sent." actions={<Button variant="secondary" disabled={busy || unread === 0} onClick={() => mark('all', true)}>Mark all as read</Button>} />
+      <PageHeader title="Notifications" subtitle="Everything that needs your attention, in one place." actions={<Button variant="secondary" disabled={busy || unread === 0} onClick={() => mark('all', true)}>Mark all as read</Button>} />
+      <p className="mb-4 rounded-xl border-2 bg-bg p-3 text-sm text-secondary">
+        {EMAIL_PROMISE} {emailReady === false ? EMAIL_NOT_CONNECTED : null} <Link href="/settings" className="inline-flex min-h-11 items-center font-semibold text-accent underline sm:min-h-0">Change email reminders</Link>
+      </p>
       <div className="mb-4 flex flex-wrap gap-3">
         <Field label="Category" className="w-52"><Select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All categories</option>{NOTIFICATION_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}</Select></Field>
         <Field label="Show" className="w-44"><Select value={status} onChange={(e) => setStatus(e.target.value as 'all' | 'unread')}><option value="all">All</option><option value="unread">Unread only ({unread})</option></Select></Field>

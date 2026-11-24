@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateRecommendations, planSync, scoreItem, deadlinePoints, isVisibleRec, type NbaInput, type Recommendation } from '../lib/nba.ts';
+import { generateRecommendations, secondarySuggestions, planSync, scoreItem, deadlinePoints, isVisibleRec, type NbaInput, type Recommendation } from '../lib/nba.ts';
 import { buildDayPlan, buildWeeklyReview } from '../lib/planning.ts';
 import { buildNotifications, reminderTier } from '../lib/notifications.ts';
 import { toCsv, csvCell } from '../lib/export.ts';
-import { computeKpis, filterApps, EMPTY_FILTERS, sumMoney, zonedToUtcIso, utcToZonedLocal, deadlineTimeline } from '../lib/overview-logic.ts';
+import { computeKpis, sumMoney, zonedToUtcIso, utcToZonedLocal, deadlineTimeline } from '../lib/overview-logic.ts';
 import { computeAnalytics, rate } from '../lib/analytics.ts';
 import { parseSettings, parseReminderDays, weightsSchema } from '../lib/settings.ts';
 import { DEFAULT_WEIGHTS } from '../lib/logic/readiness.ts';
@@ -95,7 +95,7 @@ test('nba: deterministic, sorted by score, unique keys, honest source', () => {
   assert.ok(a.every((x) => x.source.startsWith('rules: ')));
 });
 test('nba: no data produces profile gaps only, no fabricated school items', () => {
-  const r = gen(empty()); assert.deepEqual(keys(r).sort(), ['profile-test', 'profile-work']);
+  const r = gen(empty()); assert.deepEqual(keys(r).sort(), ['profile-english', 'profile-test', 'profile-work']);
 });
 test('sync plan: insert new, never resurrect dismissed/completed/converted, snooze respected', () => {
   const g = ['a', 'b', 'c', 'd', 'e', 'f'].map((k) => ({ dedupe_key: k }) as Recommendation);
@@ -178,16 +178,6 @@ test('kpis: counted from data, exclude submitted from deadlines, scholarships id
   assert.equal(k.targetSchools, 1); assert.equal(k.inProgress, 1); assert.equal(k.submitted, 3); assert.equal(k.interviews, 1); assert.equal(k.admitted, 1);
   assert.equal(k.outstandingTasks, 1); assert.equal(k.upcomingDeadlines, 1); assert.equal(k.scholarships, 2); assert.equal(k.budget.total, 150); assert.equal(k.spending.total, 90);
 });
-test('filters: every filter narrows results', () => {
-  const d = base();
-  d.schools = [school('s1', { country: 'United States', tier: 'reach' }) as never, school('s2', { country: 'France', tier: 'safer' }) as never];
-  d.applications = [app('a1', { priority: 1, round: 'R1' }) as never, app('a2', { school_id: 's2', priority: 4, round: 'R2', stage: 'ready' }) as never];
-  d.deadlines = [{ id: 'd1', application_id: 'a1', name: 'x', due_at: inDays(5), timezone: 'UTC', kind: 'submission', is_primary: true }, { id: 'd2', application_id: 'a2', name: 'y', due_at: inDays(40), timezone: 'UTC', kind: 'submission', is_primary: true }];
-  const f = (o: object) => filterApps(d, { ...EMPTY_FILTERS, ...o }, now).map((a) => a.id);
-  assert.deepEqual(f({}), ['a1', 'a2']); assert.deepEqual(f({ school: 's2' }), ['a2']); assert.deepEqual(f({ country: 'France' }), ['a2']); assert.deepEqual(f({ tier: 'reach' }), ['a1']);
-  assert.deepEqual(f({ round: 'R2' }), ['a2']); assert.deepEqual(f({ status: 'ready' }), ['a2']); assert.deepEqual(f({ priority: '1' }), ['a1']);
-  assert.deepEqual(f({ deadlineBefore: inDays(10).slice(0, 10) }), ['a1']);
-});
 test('timeline: within 30 days incl overdue, excludes submitted, risk and requirement counts', () => {
   const d = base();
   d.applications = [app('a1') as never, app('a2', { stage: 'submitted', submission_confirmed_at: inDays(-1) }) as never];
@@ -240,4 +230,42 @@ test('search: multi-word AND, accent-insensitive, schools/applications/essays, e
   assert.equal(searchAll('france', d).schools[0].id, 's2'); assert.equal(searchAll('zzz', d).schools.length, 0);
   const none = searchAll('  ', d); assert.equal(none.schools.length + none.applications.length + none.essays.length, 0);
   assert.equal(searchAll('ready', d).applications.length, 1);
+});
+
+// ---------- track-aware rules and one "what's next" ----------
+const ug = (d: OverviewData, o: Record<string, unknown> = {}) => generateRecommendations({ ...d, now, profile: { track: 'undergrad', stage: 'exploring' }, ...o });
+test('nba: undergrads never get GMAT/GRE or work experience items', () => {
+  const d = empty(); d.work = [{ id: 'w', company: 'X', position: 'Y', measurable_impact: '' }];
+  const k = keys(ug(d, { educationCount: 0, activityCount: 0 }));
+  assert.ok(!k.some((x) => /^profile-(test|work|impact)/.test(x)), k.join(','));
+  assert.ok(k.includes('profile-english')); assert.ok(k.includes('profile-grades')); assert.ok(k.includes('profile-activities'));
+  assert.ok(!k.includes('profile-sat'), 'no SAT unless a school asks');
+  for (const r of ug(d, { educationCount: 0, activityCount: 0 })) assert.doesNotMatch(`${r.title} ${r.description}`, /GMAT|GRE|work experience|—|\bactually\b/i);
+});
+test('nba: undergrad SAT only when a school on the list asks for it', () => {
+  const r = ug(empty(), { satSchools: ['MIT', 'Purdue', 'UCLA'] }).find((x) => x.dedupe_key === 'profile-sat')!;
+  assert.ok(r); assert.match(r.description, /MIT and Purdue and 1 more/);
+  const d = empty(); d.testScores = [{ id: 's', test_type: 'SAT' }];
+  assert.ok(!keys(ug(d, { satSchools: ['MIT'] })).includes('profile-sat'));
+  d.testScores = [{ id: 'i', test_type: 'IELTS' }]; assert.ok(!keys(ug(d)).includes('profile-english'));
+});
+test('nba: unknown education/activity counts never invent grade or activity items', () => {
+  const k = keys(ug(empty())); assert.ok(!k.includes('profile-grades')); assert.ok(!k.includes('profile-activities'));
+});
+test('nba: stage "applying" raises deadline items, names the school in "Set the deadline"', () => {
+  const d = base(); d.deadlines = []; d.schools = [school('s1', { short_name: 'Duke Fuqua' }) as never];
+  const explore = generateRecommendations({ ...d, now, profile: { track: 'grad', stage: 'exploring' } });
+  const apply = generateRecommendations({ ...d, now, profile: { track: 'grad', stage: 'applying' } });
+  const a = apply.find((x) => x.dedupe_key === 'no-deadline:a1')!, e = explore.find((x) => x.dedupe_key === 'no-deadline:a1')!;
+  assert.equal(a.title, 'Set the deadline for Duke Fuqua');
+  assert.equal(a.score - e.score, 10); assert.equal(a.score_breakdown.stage, 10); assert.equal(e.score_breakdown.stage, 0);
+  const t = (r: Recommendation[]) => r.find((x) => x.dedupe_key === 'no-recommender:a1')!.score;
+  assert.ok(t(apply) > t(explore));
+});
+test('secondary suggestions: at most 2, visible only, no repeat of the journey step, track filter', () => {
+  const r = (k: string, score: number, status = 'new') => ({ dedupe_key: k, score, status, snoozed_until: null });
+  const recs = [r('profile-test', 90), r('no-deadline:a1', 80), r('fee-unpaid:a1', 70), r('x', 60), r('gone', 99, 'dismissed')];
+  assert.deepEqual(secondarySuggestions(recs, { now, stepId: 'set-deadline' }).map((x) => x.dedupe_key), ['profile-test', 'fee-unpaid:a1']);
+  assert.deepEqual(secondarySuggestions(recs, { now, stepId: 'add-test', track: 'undergrad' }).map((x) => x.dedupe_key), ['no-deadline:a1', 'fee-unpaid:a1']);
+  assert.equal(secondarySuggestions(recs, { now, max: Infinity }).length, 4);
 });

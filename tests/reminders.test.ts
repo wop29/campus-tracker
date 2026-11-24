@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   readReminderPrefs, isReminderDue, localParts, withReminderPatch, dayDiff, addDays, longDate, expectedResultOn, buildReminderFacts, decideReminder, nudgeStatus,
   pickTinyStep, tinyStepFor, composeReminder, appHref, TEMPLATES, NUDGE_DAYS, NUDGE_FINAL_DAY, PRODUCT_NAME,
+  firstName, withTimezonePatch, ZERO_PROGRESS_OPENINGS, EMAIL_PROMISE, EMAIL_NOT_CONNECTED,
   type Decision, type FactApp, type LogEntry, type ReminderFacts, type ReminderRows,
 } from '../lib/reminders.ts';
 import { unsubscribeToken, verifyUnsubscribeToken, unsubscribeUrl } from '../lib/email/token.ts';
@@ -246,8 +247,9 @@ test('facts: checklist counts, application state, milestones from completion tim
       req('5', 'not_started', { mandatory: false }), req('6', 'not_started', { name: 'Submission confirmation' }), { ...req('7', 'not_started'), application_id: 'other' }],
   });
   const a = buildReminderFacts(r, meta('Asia/Jakarta'), NOW).apps[0];
-  assert.deepEqual([a.label, a.state, a.total, a.ready], ['Harbor University', 'active', 4, 2]);
-  assert.deepEqual(a.remaining.map((x) => x.name), ['Item 3', 'Item 4']);
+  // Counted like the Applications page (lib/results.ts checklistProgress): optional items count, "Submission confirmation" does not
+  assert.deepEqual([a.label, a.state, a.total, a.ready], ['Harbor University', 'active', 5, 2]);
+  assert.deepEqual(a.remaining.map((x) => x.name), ['Item 3', 'Item 4', 'Item 5'], 'started first, then required, then optional');
   assert.deepEqual(a.readyOn, ['2026-11-15', null]);
   const state = (stage: string, decision?: string, confirmed: string | null = null) => buildReminderFacts(rows({
     applications: [{ id: 'a1', school_id: 's1', stage, round: null, submission_confirmed_at: confirmed, submitted_at: null }], decisions: decision ? [{ application_id: 'a1', decision }] : [],
@@ -410,6 +412,34 @@ test('lint: no alarm words, no capitals, no long dashes, no "actually", at most 
   // 3. The lint itself catches what it should
   for (const bad of ['This is URGENT', 'Last chance to apply', "Don't miss it", 'Time is running out', 'Wow!!', 'One — two', 'It is actually fine', 'DO THIS NOW'])
     assert.throws(() => lint('self-check', bad), `lint should reject "${bad}"`);
+});
+
+test('zero progress: never "the good news: 0 of N", an encouraging first step instead', () => {
+  const zero = decideReminder(facts({ lastActiveOn: day(-3), apps: [fApp({ ready: 0, readyOn: [] })] }));
+  assert.equal(zero.kind, 'nudge');
+  for (let i = 0; i < 40; i++) {
+    const e = mail(zero, `zero-${i}`, i % 2 ? 'Rina Putri' : null);
+    assert.ok(!/0 of \d+/.test(`${e.subject}\n${e.text}`), `seed ${i}: mentions 0 of N`);
+    assert.ok(!/good news/i.test(e.text), `seed ${i}: says good news at zero`);
+    assert.match(e.text, /haven't started|Nothing is ticked off/);
+    assert.match(e.text, /easy first step/);
+    lint(`zero nudge (seed ${i})`, e.text); lint(`zero nudge subject (seed ${i})`, e.subject);
+  }
+  for (const fn of ZERO_PROGRESS_OPENINGS) for (const school of ['Harbor University', null]) lint('zero opening', fn(school));
+  assert.match(mail(zero, 'x', 'Rina Putri').text, /^Hi Rina,/, 'greets by first name');
+  assert.match(mail(zero, 'x', 'Rina Putri').html, /<a href="https:\/\/app\.example\.com\/applications\?a=a1" style="display:inline-block;/, 'link is a button');
+});
+
+test('firstName, timezone patch and the one email promise', () => {
+  assert.equal(firstName('  Rina Putri '), 'Rina');
+  assert.equal(firstName(null, '', 'Bima Santoso'), 'Bima');
+  assert.equal(firstName(null, undefined), null);
+  const s = withTimezonePatch({ theme: 'night', onboarding: { done: true, timezone: 'Asia/Jakarta', reminders: { email: true, hourLocal: 8 } } }, 'Australia/Melbourne') as { theme: string; onboarding: { done: boolean; timezone: string; reminders: unknown } };
+  assert.deepEqual([s.theme, s.onboarding.done, s.onboarding.timezone], ['night', true, 'Australia/Melbourne']);
+  assert.deepEqual(s.onboarding.reminders, { email: true, hourLocal: 8 });
+  assert.equal((withTimezonePatch(null, 'Not/AZone').onboarding as { timezone: string }).timezone, 'Asia/Jakarta');
+  assert.match(EMAIL_PROMISE, /Never daily\.$/);
+  assert.ok(!/daily email|This app does not send email/i.test(EMAIL_NOT_CONNECTED));
 });
 
 test('unsubscribe HMAC: verifies, rejects tampering, wrong secret, bad ids', () => {

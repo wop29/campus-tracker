@@ -5,7 +5,8 @@ import { useToast } from '@/components/toast';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { must } from '@/lib/hooks';
 import { fmtDateTime } from '@/lib/utils';
-import { profileCompleteness, STATUS_CREDIT, SECTION_WEIGHT, type SectionKey, type SectionStatus } from '@/lib/profile';
+import { profileCompleteness, sectionLabels, sectionWeights, STATUS_CREDIT, type SectionKey, type SectionStatus } from '@/lib/profile';
+import { aiEnabled, AI_OFF_MESSAGE } from '@/lib/features';
 import { assess, DISCLAIMER, type Dimension } from '@/lib/competitiveness';
 import { currentUserId, type ProfileData } from './data';
 
@@ -13,12 +14,14 @@ const STATUS_TONE: Record<SectionStatus, 'neutral' | 'warning' | 'accent' | 'suc
 const STATUS_LABEL: Record<SectionStatus, string> = { missing: 'Missing', incomplete: 'Incomplete', needs_verification: 'Needs verification', complete: 'Complete' };
 
 export function CompletenessPanel({ data, onOpen }: { data: ProfileData; onOpen: (k: SectionKey) => void }) {
-  const res = useMemo(() => profileCompleteness({ ...data, verification: data.profile?.field_verification }), [data]);
+  const res = useMemo(() => profileCompleteness({ ...data, verification: data.profile?.field_verification, track: data.track, program: data.program }), [data]);
+  const weights = sectionWeights(data.track); const labels = sectionLabels(data.track, data.program);
   return (
     <Card className="space-y-4">
-      <div><div className="flex items-baseline justify-between"><h2 className="font-semibold">Profile completeness</h2><span className="text-2xl font-semibold">{res.percent}%</span></div>
+      <div><div className="flex items-baseline justify-between"><h2 className="font-semibold">Profile details filled in</h2><span className="text-2xl font-semibold">{res.percent}%</span></div>
         <ProgressBar value={res.percent} tone={res.percent >= 80 ? 'success' : res.percent >= 40 ? 'warning' : 'danger'} />
-        <p className="mt-1 text-xs text-secondary">Each section has a weight. Complete earns {STATUS_CREDIT.complete * 100}% of it, needs verification {STATUS_CREDIT.needs_verification * 100}%, incomplete {STATUS_CREDIT.incomplete * 100}%, missing 0%. Weights: {Object.entries(SECTION_WEIGHT).map(([k, w]) => `${k} ${w}`).join(', ')}.</p></div>
+        <p className="mt-1 text-xs text-secondary">This counts the details on this page only. Your Journey steps are tracked separately on the Journey page.</p>
+        <details className="mt-1 text-xs text-secondary"><summary className="cursor-pointer">How this is counted</summary><p className="mt-1">Each section has a weight. Complete earns {STATUS_CREDIT.complete * 100}% of it, needs checking {STATUS_CREDIT.needs_verification * 100}%, started {STATUS_CREDIT.incomplete * 100}%, empty 0%. Weights: {(Object.entries(weights) as [SectionKey, number][]).filter(([, w]) => w > 0).map(([k, w]) => `${labels[k]} ${w}`).join(', ')}.</p></details></div>
       <ul className="divide-y">
         {res.sections.map((s) => (
           <li key={s.key} className="py-2.5">
@@ -38,8 +41,8 @@ function DimCard({ d }: { d: Dimension }) {
   return (
     <Card className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">{d.label}</h3>
-        {d.score == null ? <Badge>Insufficient data</Badge> : <div className="flex items-center gap-2"><Dots n={d.score} /><span className="text-sm font-medium">{d.score} / 5</span><Badge tone={d.confidence === 'high' ? 'success' : d.confidence === 'medium' ? 'warning' : 'danger'}>{d.confidence} confidence</Badge></div>}
+        <h3 className="font-semibold">{d.label}</h3>{d.optional && d.score != null && <Badge>Optional</Badge>}
+        {d.score == null ? <Badge>{d.optional ? 'Optional' : 'Not enough info yet'}</Badge> : <div className="flex items-center gap-2"><Dots n={d.score} /><span className="text-sm font-medium">{d.score} / 5</span><Badge tone={d.confidence === 'high' ? 'success' : d.confidence === 'medium' ? 'warning' : 'danger'}>{d.confidence} confidence</Badge></div>}
       </div>
       {d.insufficientReason && <p className="text-sm text-secondary">{d.insufficientReason}</p>}
       <details className="text-sm"><summary className="cursor-pointer text-secondary">How this is calculated</summary><p className="mt-1 text-secondary">{d.rule}</p></details>
@@ -54,8 +57,9 @@ function DimCard({ d }: { d: Dimension }) {
 export function CompetitivenessPanel({ data, reload }: { data: ProfileData; reload: () => Promise<void> }) {
   const toast = useToast();
   const dims = useMemo(() => assess({ ...data }), [data]);
+  const showAi = aiEnabled(); const who = data.track === 'undergrad' ? 'undergraduate' : data.program === 'mba' || !data.program ? 'MBA' : 'graduate';
   const [saving, setSaving] = useState(false); const [aiBusy, setAiBusy] = useState(false); const [ai, setAi] = useState<string | null>(null); const [aiErr, setAiErr] = useState<string | null>(null);
-  const scored = dims.filter((d) => d.score != null).length;
+  const scored = dims.filter((d) => d.score != null).length; const counted = dims.filter((d) => !d.optional).length; const scoredCounted = dims.filter((d) => !d.optional && d.score != null).length;
   const payloadDims = dims.map((d) => ({ key: d.key, label: d.label, score: d.score, confidence: d.confidence, rule: d.rule, evidence: d.evidence, weaknesses: d.weaknesses, improvements: d.improvements, insufficientReason: d.insufficientReason ?? null }));
 
   async function save() {
@@ -71,23 +75,23 @@ export function CompetitivenessPanel({ data, reload }: { data: ProfileData; relo
     if (aiBusy) return; setAiBusy(true); setAiErr(null);
     try {
       const res = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        system: 'You summarise a rules-based MBA applicant self-assessment. Use only the structured data provided. Do not invent facts, numbers or school requirements. Do not predict admission chances. State clearly where data is insufficient. Be concise, plain and direct, with short bullet points.',
+        system: `You summarise a rules-based ${who} applicant self-assessment. Use only the structured data provided. Do not invent facts, numbers or school requirements. Do not predict admission chances. State clearly where data is insufficient. Be concise, plain and direct, with short bullet points.`,
         prompt: `Write a short narrative of strengths, gaps and next steps based on this assessment data.\n\n${JSON.stringify({ dimensions: payloadDims, sourcedSchoolDataRows: data.schoolData.length }, null, 1)}`, maxTokens: 1200 }) });
       const j = await res.json().catch(() => ({}));
-      if (res.status === 503) setAiErr(j.message ?? 'AI is not configured. Set ANTHROPIC_API_KEY to enable narratives. Everything else still works.');
-      else if (!res.ok) setAiErr(j.message ?? j.error ?? 'AI request failed');
+      if (res.status === 503) setAiErr(AI_OFF_MESSAGE);
+      else if (!res.ok) setAiErr('We could not write the summary right now. Please try again later.');
       else setAi(j.text);
-    } catch (e) { setAiErr((e as Error).message); } finally { setAiBusy(false); }
+    } catch (e) { setAiErr('We could not write the summary right now. Please try again later.'); } finally { setAiBusy(false); }
   }
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm" role="note"><b>Self-assessment only.</b> {DISCLAIMER}</div>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge>{scored} of {dims.length} dimensions have enough data</Badge>
-        <div className="ml-auto flex gap-2"><Button variant="secondary" size="sm" onClick={narrative} disabled={aiBusy || scored === 0}>{aiBusy ? 'Generating...' : 'Get AI narrative'}</Button><Button size="sm" onClick={save} disabled={saving || scored === 0}>{saving ? 'Saving...' : 'Save snapshot'}</Button></div>
+        <Badge>{scoredCounted} of {counted} areas have enough info</Badge>
+        <div className="ml-auto flex gap-2">{showAi && <Button variant="secondary" size="sm" onClick={narrative} disabled={aiBusy || scored === 0}>{aiBusy ? 'Writing...' : 'Get AI summary'}</Button>}<Button size="sm" onClick={save} disabled={saving || scored === 0}>{saving ? 'Saving...' : 'Save snapshot'}</Button></div>
       </div>
-      {aiErr && <div className="rounded-md border p-3 text-sm text-secondary" role="status">{aiErr}</div>}
-      {ai && <Card className="space-y-2"><div className="flex items-center gap-2"><AiLabel /><span className="text-xs text-secondary">Written from the rule results above. Check it against your records.</span></div><div className="whitespace-pre-wrap text-sm">{ai}</div></Card>}
+      {showAi && aiErr && <div className="rounded-md border p-3 text-sm text-secondary" role="status">{aiErr}</div>}
+      {showAi && ai && <Card className="space-y-2"><div className="flex items-center gap-2"><AiLabel /><span className="text-xs text-secondary">Written from the rule results above. Check it against your records.</span></div><div className="whitespace-pre-wrap text-sm">{ai}</div></Card>}
       <div className="grid gap-3 lg:grid-cols-2">{dims.map((d) => <DimCard key={d.key} d={d} />)}</div>
       <Card className="space-y-2"><h3 className="font-semibold">Saved snapshots</h3>
         {data.snapshots.length === 0 ? <EmptyState title="No snapshots saved yet" hint="Save a snapshot to track how your profile changes over time." /> : (

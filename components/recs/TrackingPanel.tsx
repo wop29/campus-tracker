@@ -11,11 +11,15 @@ import { appLabel, errMsg, type AppLite } from '@/components/essays/data';
 import { changeRecStatus, deleteRecommendation } from './actions';
 import { AssignModal, EditAssignmentModal } from './AssignmentModals';
 import { RecAiModal } from './RecAiModal';
+import { aiEnabled } from '@/lib/features';
+import { RecommenderModal } from './RecommendersPanel';
+import type { Track } from '@/lib/onboarding';
 
-export function TrackingPanel({ recommenders, recs, apps, onChanged }: { recommenders: RecommenderRow[]; recs: RecommendationRow[]; apps: AppLite[]; onChanged: () => void }) {
+export function TrackingPanel({ recommenders, recs, apps, onChanged, track }: { recommenders: RecommenderRow[]; recs: RecommendationRow[]; apps: AppLite[]; onChanged: () => void; track?: Track }) {
   const toast = useToast();
   const [view, setView] = useState<'table' | 'board'>('table');
   const [assign, setAssign] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [edit, setEdit] = useState<RecommendationRow | null>(null);
   const [ai, setAi] = useState<RecommendationRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -43,7 +47,7 @@ export function TrackingPanel({ recommenders, recs, apps, onChanged }: { recomme
     {reminderDue(r, now) && <Badge tone="accent">Reminder suggested</Badge>}</>); };
   const actions = (r: RecommendationRow) => (
     <div className="flex flex-wrap gap-1">
-      <Button size="sm" variant="secondary" onClick={() => setAi(r)}><Sparkles size={12} /> AI help</Button>
+      {aiEnabled() && <Button size="sm" variant="secondary" onClick={() => setAi(r)}><Sparkles size={12} /> AI help</Button>}
       <Button size="sm" variant="ghost" onClick={() => void logContact(r)} title="Set last contact to today"><CalendarClock size={12} /></Button>
       <Button size="sm" variant="ghost" aria-label="Edit tracking" onClick={() => setEdit(r)}><Pencil size={12} /></Button>
       <Button size="sm" variant="ghost" aria-label="Remove assignment" onClick={() => { if (window.confirm('Remove this assignment? A submitted status would reopen the checklist item.')) void remove(r); }}><Trash2 size={12} /></Button>
@@ -61,7 +65,7 @@ export function TrackingPanel({ recommenders, recs, apps, onChanged }: { recomme
         <Button className="ml-auto" disabled={!recommenders.length || !apps.length} onClick={() => setAssign(true)}><Plus size={14} /> Assign to application</Button>
       </div>
       {flagged.length > 0 && <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" role="status"><strong>{flagged.length} recommendation{flagged.length === 1 ? '' : 's'} need attention:</strong> {flagged.map((r) => `${recr(r.recommender_id)?.name} for ${app(r.application_id)?.schools?.short_name ?? app(r.application_id)?.schools?.name ?? 'a school'} (${recRisk(r, now) === 'overdue' ? 'overdue' : `due ${fmtDate(r.deadline)}`})`).join('; ')}.</div>}
-      {!recommenders.length ? <EmptyState title="Add a recommender first" hint="Use the Recommenders tab, then assign them to applications here." /> : !apps.length ? <EmptyState title="No applications yet" hint="Create an application in Applications, then assign recommenders to it." /> : !visible.length ? <EmptyState title="No assignments yet" hint="Assign a recommender to an application to start tracking it." action={<Button onClick={() => setAssign(true)}>Assign recommender</Button>} /> : view === 'table' ? (
+      {!recommenders.length ? <EmptyState title="Add your first recommender" hint={track === 'undergrad' ? 'Start with a teacher or counselor who knows you well. Then assign them to each university here.' : 'Start with someone who knows your work well. Then assign them to each school here.'} action={<Button onClick={() => setAdding(true)}><Plus size={14} /> Add recommender</Button>} /> : !apps.length ? <EmptyState title="No applications yet" hint="Create an application in Applications, then assign recommenders to it." /> : !visible.length ? <EmptyState title="No assignments yet" hint="Assign a recommender to an application to start tracking it." action={<Button onClick={() => setAssign(true)}>Assign recommender</Button>} /> : view === 'table' ? (
         <div className="space-y-4">{byApp.map(([appId, rows]) => { const a = app(appId); const done = rows.filter((r) => r.status === 'submitted').length; return (
           <div key={appId} className="overflow-x-auto rounded-lg border bg-surface">
             <div className="flex items-center justify-between border-b bg-bg px-3 py-2 text-sm"><span className="font-medium">{a ? appLabel(a) : 'Application'}</span><span className="text-xs text-secondary">{done} of {rows.length} submitted</span></div>
@@ -77,6 +81,7 @@ export function TrackingPanel({ recommenders, recs, apps, onChanged }: { recomme
               <Card key={r.id} className="space-y-1.5 p-2.5"><p className="text-sm font-medium">{recr(r.recommender_id)?.name}</p><p className="text-xs text-secondary">{app(r.application_id) ? appLabel(app(r.application_id)!) : ''}</p>
                 <p className="text-xs">Due: {fmtDate(r.deadline)}</p><div className="flex flex-wrap gap-1"><RiskBadges r={r} /></div><StatusSelect r={r} />{actions(r)}</Card>))}</div></div>); })}</div>
       )}
+      {adding && <RecommenderModal track={track} rec={null} onClose={() => setAdding(false)} onDone={() => { setAdding(false); onChanged(); }} />}
       {assign && <AssignModal recommenders={recommenders} apps={apps} recs={recs} onClose={() => setAssign(false)} onDone={() => { setAssign(false); onChanged(); }} />}
       {edit && <EditAssignmentModal rec={edit} recs={recs} onClose={() => setEdit(null)} onDone={() => { setEdit(null); onChanged(); }} />}
       {ai && recr(ai.recommender_id) && <RecAiModal rec={ai} recommender={recr(ai.recommender_id)!} app={app(ai.application_id)} onClose={() => setAi(null)} />}

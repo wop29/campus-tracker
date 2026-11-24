@@ -5,7 +5,9 @@ import { AiLabel, Badge, Button, Card, EmptyState, ErrorBox, Field, Loading, Pag
 import { useQuery } from '@/lib/hooks';
 import { FIELD_BY_KEY, buildResearchContext, dataFlags, flagWords, formatValue, type DataRow } from '@/lib/schools';
 import type { GoalsRow } from '@/lib/profile';
-import { SchoolsNav, SourceLink } from './shared';
+import { SourceLink } from './shared';
+import { CatalogueNav } from './catalogue-nav';
+import { AI_OFF_MESSAGE, aiEnabled } from '@/lib/features';
 
 type Row = DataRow & { schools: { name: string } };
 const Q = z.string().trim().min(5, 'Ask a specific question (at least 5 characters)').max(1500, 'Keep the question under 1500 characters');
@@ -29,16 +31,25 @@ export function ResearchView() {
       const prompt = `Today's date: ${new Date().toISOString().slice(0, 10)}\n\nApplicant goals (user-entered):\n${goalText || 'Not provided'}\n\nSourced school data rows (the only school facts you may use):\n${ctx.text}\n\nQuestion: ${p.data}`;
       const res = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: SYSTEM, prompt, maxTokens: 1500 }) });
       const j = await res.json().catch(() => ({}));
-      if (res.status === 503) setNotice(j.message ?? 'AI is not configured. Set ANTHROPIC_API_KEY to enable the research assistant. The rest of the app works without it.');
+      if (res.status === 503) setNotice(AI_OFF_MESSAGE);
       else if (!res.ok) setNotice(j.message ?? j.error ?? 'The AI request failed. Try again.');
       else { setAnswer(j.text); setUsed(ctx.used); setTruncated(ctx.truncated); }
     } catch (e) { setNotice((e as Error).message); } finally { setBusy(false); }
   }
 
+  if (!aiEnabled()) {
+    return (
+      <div>
+        <PageHeader title="School Portfolio" subtitle="Ask questions about your researched schools." />
+        <CatalogueNav active="research" />
+        <EmptyState title="The research assistant is coming soon" hint={AI_OFF_MESSAGE} />
+      </div>
+    );
+  }
   return (
     <div>
       <PageHeader title="School Portfolio" subtitle="Ask questions about your researched schools." />
-      <SchoolsNav active="research" />
+      <CatalogueNav active="research" />
       {rows.loading && !rows.data ? <Loading /> : rows.error ? <ErrorBox message={rows.error} onRetry={() => void rows.reload()} /> : all.length === 0 ? <EmptyState title="No researched data yet" hint="The assistant only reads data points you saved with a source. Add some on a school page." /> : (
         <div className="space-y-4">
           <Card className="space-y-3">

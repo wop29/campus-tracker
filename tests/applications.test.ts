@@ -151,3 +151,60 @@ test('letter prompt contains only user-entered facts', () => {
   assert.match(p.prompt, /Led a team of 4/); assert.match(p.prompt, /I like the lab/); assert.match(p.prompt, /\(none provided\)/); assert.match(p.system, /only the facts/i);
   assert.match(buildLetterPrompt({ school: 'A', program: 'M', achievements: [], interest: '', materials: '' }).prompt, /\(not provided\)/);
 });
+
+/* ---- create-dialog defaults (track and country aware) */
+import {
+  countryCode, currencyForCountry, timezoneForSchool, defaultProgram, intakeOptions, defaultIntake, applicationPlans, UNDERGRAD_PROGRAM, TIMEZONES,
+} from '../lib/applications.ts';
+test('countryCode normalises free-text countries', () => {
+  assert.equal(countryCode('United States'), 'US'); assert.equal(countryCode('USA'), 'US'); assert.equal(countryCode(' u.s. '), 'US');
+  assert.equal(countryCode('United Kingdom'), 'UK'); assert.equal(countryCode('England'), 'UK'); assert.equal(countryCode('Australia'), 'AU');
+  assert.equal(countryCode('Hong Kong'), 'HK'); assert.equal(countryCode('Switzerland'), 'CH'); assert.equal(countryCode('Atlantis'), null); assert.equal(countryCode(null), null);
+});
+test('currencyForCountry maps the school country to its currency', () => {
+  const cases: [string, string][] = [['United States', 'USD'], ['UK', 'GBP'], ['Canada', 'CAD'], ['Australia', 'AUD'], ['Singapore', 'SGD'], ['Hong Kong', 'HKD'], ['France', 'EUR'], ['Spain', 'EUR'], ['Switzerland', 'CHF'], ['China', 'CNY']];
+  for (const [c, cur] of cases) assert.equal(currencyForCountry(c), cur, c);
+  assert.equal(currencyForCountry(null), 'USD'); assert.equal(currencyForCountry('Narnia'), 'USD');
+});
+test('timezoneForSchool uses country and city', () => {
+  assert.equal(timezoneForSchool('Australia', 'Melbourne'), 'Australia/Melbourne');
+  assert.equal(timezoneForSchool('Australia', 'Parkville, Victoria'), 'Australia/Melbourne');
+  assert.equal(timezoneForSchool('Australia', 'Sydney'), 'Australia/Sydney'); assert.equal(timezoneForSchool('Australia', null), 'Australia/Sydney');
+  assert.equal(timezoneForSchool('Australia', 'Perth, WA'), 'Australia/Perth'); assert.equal(timezoneForSchool('Australia', 'Brisbane'), 'Australia/Brisbane');
+  assert.equal(timezoneForSchool('United States', 'Chicago, IL'), 'America/Chicago'); assert.equal(timezoneForSchool('United States', 'Stanford, CA'), 'America/Los_Angeles');
+  assert.equal(timezoneForSchool('United States', 'Boston, MA'), 'America/New_York'); assert.equal(timezoneForSchool('United States', 'Tempe, AZ'), 'America/Phoenix');
+  assert.equal(timezoneForSchool('Canada', 'Vancouver, BC'), 'America/Vancouver'); assert.equal(timezoneForSchool('Canada', 'Victoria, BC'), 'America/Vancouver'); assert.equal(timezoneForSchool('Canada', 'Toronto'), 'America/Toronto');
+  assert.equal(timezoneForSchool('United Kingdom', 'London'), 'Europe/London'); assert.equal(timezoneForSchool('France', 'Fontainebleau'), 'Europe/Paris');
+  assert.equal(timezoneForSchool('Singapore'), 'Asia/Singapore'); assert.equal(timezoneForSchool(null), 'America/New_York');
+  for (const c of ['United States', 'UK', 'Canada', 'Australia', 'Singapore', 'Hong Kong', 'France', 'Spain', 'Switzerland', 'China', 'New Zealand', 'Japan']) assert.ok(TIMEZONES.includes(timezoneForSchool(c)), c);
+});
+test('defaultProgram never defaults to Full-time MBA and respects the track', () => {
+  assert.equal(defaultProgram('undergrad', []), UNDERGRAD_PROGRAM);
+  assert.equal(defaultProgram('undergrad', ['MBA', 'Bachelor of Commerce']), 'Bachelor of Commerce');
+  assert.equal(defaultProgram('undergrad', ['Full-time MBA']), UNDERGRAD_PROGRAM);
+  assert.equal(defaultProgram('grad', ['Bachelor of Arts', 'Master of Finance']), 'Master of Finance');
+  assert.equal(defaultProgram('grad', [], 'mba'), 'MBA'); assert.equal(defaultProgram('grad', [], 'masters'), "Master's"); assert.equal(defaultProgram('grad', []), '');
+  assert.notEqual(defaultProgram('grad', []), 'Full-time MBA');
+});
+test('intakeOptions: Australia uses semesters, others Fall/Spring, near starts skipped', () => {
+  const today = new Date(2026, 10, 23);
+  assert.deepEqual(intakeOptions('Australia', today, 3), ['Semester 1 2027 (Feb)', 'Semester 2 2027 (Jul)', 'Semester 1 2028 (Feb)']);
+  assert.deepEqual(intakeOptions('United States', today, 3), ['Fall 2027', 'Spring 2028', 'Fall 2028']);
+  assert.deepEqual(intakeOptions('United States', new Date(2026, 11, 5), 2), ['Fall 2027', 'Spring 2028']);
+  assert.equal(defaultIntake('United States', 'Fall 2027', today), 'Fall 2027');
+  assert.equal(defaultIntake('Australia', 'Fall 2027', today), 'Semester 1 2028 (Feb)');
+  assert.equal(defaultIntake('Australia', 'Semester 2 2027 (Jul)', today), 'Semester 2 2027 (Jul)');
+  assert.equal(defaultIntake('Australia', undefined, today), 'Semester 1 2027 (Feb)');
+  assert.equal(defaultIntake('UK', 'Fall 2027', today), 'Fall 2027');
+});
+test('applicationPlans per country for undergrads', () => {
+  assert.ok(applicationPlans('United States').includes('Early Action') && applicationPlans('USA').includes('Regular Decision'));
+  assert.ok(applicationPlans('United Kingdom')[0].startsWith('UCAS main'));
+  assert.deepEqual(applicationPlans('Australia'), []); assert.deepEqual(applicationPlans(null), []);
+});
+test('final checklist understands undergrad template names', () => {
+  const reqs = [req('School transcripts (rapor) and translation', 'academics', 'complete'), req('English test (IELTS/TOEFL/Duolingo)', 'tests', 'complete'), req('Application form', 'form'), req('Application fee', 'other')];
+  const items = buildChecklist({ confirmations: {}, essays: [], requirements: reqs, hasTestScores: false, recommendations: [], feePaidExpense: false });
+  assert.equal(items.find((i) => i.id === 'transcripts')!.auto, 'pass');
+  assert.equal(items.find((i) => i.id === 'test_scores')!.auto, 'pass');
+});

@@ -7,6 +7,7 @@ import {
   programsForTrack, requirementChecklist, requirementRows, safeUrl, type Program, type ProgramRow,
 } from '../lib/programs.ts';
 import { REQ_CATEGORIES, CURRENCIES } from '../lib/applications.ts';
+import { englishChips } from '../lib/programs.ts';
 
 // Fixtures follow the research spec shape. Values are taken from the official pages already cited in migration 019.
 const GSB = 'https://www.gsb.stanford.edu/programs/mba/admission';
@@ -73,7 +74,7 @@ test('minimumScore reads real research wording without inventing a number', () =
   const cases: [string, string | null][] = [
     ['accepted (min 135 overall, 125 each component)', '135'], ['accepted (no minimum to apply; discouraged below 145)', null],
     ['accepted (equivalent to TOEFL 100; no specific Duolingo number given)', null], ['accepted (DET listed; minimum not stated)', null],
-    ['7.0 overall, 6.5 each band', '7.0'], ['100 iBT (min 20 Listening, 20 Speaking)', '20'], ['iBT 100 for tests before Jan 21, 2026', '100'],
+    ['7.0 overall, 6.5 each band', '7.0'], ['100 iBT (min 20 Listening, 20 Speaking)', '100'], ['iBT 100 for tests before Jan 21, 2026', '100'],
     ['7.0 minimum overall (UCLA minimum)', '7.0'], ['No minimum to apply; Admissions Board discourages below 7.5', null], ['Set by Graduate School (not listed on page)', null],
   ];
   for (const [v, want] of cases) assert.equal(minimumScore(v), want, v);
@@ -92,13 +93,13 @@ test('video and interview wording that means "none" is left off the checklist', 
 
 test('requirementChecklist is ordered and complete for a full program', () => {
   const items = requirementChecklist(stanford);
-  assert.deepEqual(items.map((i) => i.key), ['tests', 'english', 'essay-1', 'essay-2', 'interview', 'recommendations', 'resume', 'transcripts', 'fee', 'deadline']);
+  assert.deepEqual(items.map((i) => i.key), ['deadline', 'tests', 'english', 'essay-1', 'essay-2', 'interview', 'recommendations', 'resume', 'transcripts', 'fee']);
   for (const i of items) { assert.ok(REQ_CATEGORIES.includes(i.category), i.category); assert.ok(i.source_url?.startsWith('https://'), i.key); assert.ok(i.detail.length > 0); }
-  const e1 = items[2];
+  const e1 = items[3];
   assert.equal(e1.name, 'Essay 1: What matters most to you, and why?'); assert.match(e1.detail, /What matters most to you, and why\?\nLimit: up to 650 words/);
   assert.equal(e1.essay?.word_limit, 650); assert.equal(e1.source_url, `${GSB}/application/essays`);
-  const tests = items[0]; assert.equal(tests.name, 'GMAT/GRE'); assert.equal(tests.mandatory, true, '"no minimum score" is not optional');
-  const eng = items[1]; assert.match(eng.detail, /Duolingo: not accepted/); assert.match(eng.detail, /Waiver: Not required if a later graduate program/);
+  const tests = items[1]; assert.equal(tests.name, 'GMAT/GRE'); assert.equal(tests.mandatory, true, '"no minimum score" is not optional');
+  const eng = items[2]; assert.match(eng.detail, /Duolingo: not accepted/); assert.match(eng.detail, /Waiver: Not required if a later graduate program/);
   assert.equal(items.find((i) => i.key === 'interview')?.mandatory, false, 'interviews are invite-only');
   assert.ok(!items.some((i) => i.key === 'video'), '"none required" video is left out');
   assert.match(items.find((i) => i.key === 'transcripts')!.detail, /Good to know: Upload unofficial transcripts/);
@@ -106,14 +107,14 @@ test('requirementChecklist is ordered and complete for a full program', () => {
 });
 test('requirementChecklist is honest about missing sections', () => {
   const items = requirementChecklist(kellogg);
-  assert.deepEqual(items.map((i) => i.key), ['tests', 'english', 'essay-1', 'video', 'recommendations', 'resume', 'transcripts', 'fee', 'deadline']);
+  assert.deepEqual(items.map((i) => i.key), ['deadline', 'tests', 'english', 'essay-1', 'video', 'recommendations', 'resume', 'transcripts', 'fee']);
   const video = items.find((i) => i.key === 'video')!; assert.equal(video.mandatory, true); assert.equal(video.group, 'interview');
   for (const k of ['recommendations', 'resume', 'fee', 'deadline']) assert.match(items.find((i) => i.key === k)!.detail, /could not find this/);
   assert.equal(items.find((i) => i.key === 'recommendations')?.mandatory, false);
   assert.equal(items.find((i) => i.key === 'resume')?.source_url, kellogg.program_url);
   const optional = parseProgram(row({ ...kelloggData, tests: { value: 'GMAT/GRE optional for this program', source_url: null }, essays: { items: [{ prompt: 'Anything else?', limit: '250 words', required: false }], source_url: null } }))!;
   const oi = requirementChecklist(optional);
-  assert.equal(oi[0].mandatory, false); assert.equal(oi[2].mandatory, false); assert.match(oi[2].detail, /\(Optional\)/);
+  assert.equal(oi[0].key, 'deadline'); assert.equal(oi[0].mandatory, true); assert.equal(oi[1].mandatory, false); assert.equal(oi[3].mandatory, false); assert.match(oi[3].detail, /\(Optional\)/);
 });
 test('clearlyOptional only when nothing says required', () => {
   assert.ok(clearlyOptional('Test optional')); assert.ok(clearlyOptional('GMAT/GRE not required'));
@@ -152,7 +153,7 @@ test('small parsers', () => {
   assert.deepEqual(parseFee('S$100', CURRENCIES), { amount: 100, currency: 'SGD' }); assert.deepEqual(parseFee('GBP 1,000 deposit', CURRENCIES), { amount: 1000, currency: 'GBP' });
   assert.equal(parseFee('$250 for Round 1 and Round 2, $200 for Round 3', CURRENCIES), null); assert.equal(parseFee('No fee published', CURRENCIES), null);
 });
-test('programsForTrack: grad sees every degree type with the preferred one first, undergrad sees none yet', () => {
+test('programsForTrack: grad sees grad degree types with the preferred one first, undergrad sees none without undergrad data', () => {
   const m = parseProgram(row({ ...stanfordData }, { id: 'm', program_name: 'MSx', degree_type: 'masters' }))!;
   const o = parseProgram(row({ ...stanfordData }, { id: 'o', program_name: 'Joint degree', degree_type: 'weird' }))!;
   assert.equal(o.degree_type, 'other');
@@ -177,7 +178,8 @@ test(`research files parse into usable checklists (${files.length} file(s) found
       assert.ok(items.length >= 7, `${p.program_name} has ${items.length} items`);
       for (const i of items) assert.ok(REQ_CATEGORIES.includes(i.category));
       assert.equal(items.filter((i) => i.key.startsWith('essay-')).length, p.essays?.items.length ?? 0);
-      assert.ok(englishSummary(p).some((c) => c.startsWith('Duolingo') || c === 'English test not stated'));
+      assert.ok(englishSummary(p).some((c) => c.startsWith('Duolingo') || c === 'English test not stated' || c === 'No English test needed'));
+      for (const c of englishChips(p)) assert.ok(c.text.length <= 70, c.text);
       n++;
     }
   }
@@ -245,4 +247,117 @@ test('GRE ranges in the wording the research uses', () => {
   assert.equal(parseGreRange('Quant middle 80%: 160-170 (verbal not reported)', 'verbal'), null);
   assert.deepEqual(parseGreRange('Quant middle 80%: 160-170 (verbal not reported)', 'quant'), { low: 160, high: 170 });
   assert.equal(parseGreRange('Median V 159, Q 160 (2023-24)', 'verbal'), null);
+});
+
+/* ------------------------------------------------------------------ usability fixes (Nov 2026) */
+import {
+  IDR_PER, IDR_PER_USD, formatIdr, nextOpenRound, noEnglishTestNeeded, overallScore, parseRounds, sanitizeText, toIdr, validOverall,
+} from '../lib/programs.ts';
+
+test('English chips use the overall score only, with range checks', () => {
+  const lbs = { ielts_min: '7.0 overall, 6.5 each band', toefl_min: '100 iBT (min 20 Listening, 20 Speaking, 19 Reading, 24 Writing)', duolingo: 'accepted (min 135 overall, 125 each component)', pte_min: '76 overall, 70 each component', other_tests: null, waiver: null, source_url: null };
+  assert.deepEqual(englishSummary({ english: lbs }), ['IELTS 7.0', 'TOEFL 100', 'Duolingo 135', 'PTE 76']);
+  assert.deepEqual(overallScore('TOEFL', '5.0 on the new scale (on/post Jan 21, 2026); 104 iBT (pre Jan 21, 2026); 600 paper'), { kind: 'score', value: '104' });
+  assert.deepEqual(overallScore('TOEFL', '5.0 on the new scale'), { kind: 'score', value: '5.0' });
+  assert.deepEqual(overallScore('TOEFL', 'No minimum to apply; discouraged below 109 iBT'), { kind: 'none' });
+  assert.deepEqual(overallScore('IELTS', '75 overall'), { kind: 'invalid' });
+  assert.deepEqual(overallScore('Duolingo', 'min 20'), { kind: 'invalid' });
+  assert.deepEqual(overallScore('IELTS', 'Overall 6.5 with no band below 6.0'), { kind: 'score', value: '6.5' }, 'band minimum ignored');
+  assert.deepEqual(overallScore('IELTS', 'Set by the Graduate School'), { kind: 'none' });
+  for (const [t, ok, bad] of [['IELTS', 7, 10], ['TOEFL', 100, 20], ['TOEFL', 5, 130], ['Duolingo', 120, 60], ['PTE', 65, 95]] as const) {
+    assert.ok(validOverall(t, ok), `${t} ${ok}`); assert.ok(!validOverall(t, bad), `${t} ${bad}`);
+  }
+  // Out of range: the text is shown instead of a made-up chip.
+  const chips = englishChips({ english: { ...lbs, ielts_min: '75 overall', toefl_min: null, duolingo: 'not stated', pte_min: null } });
+  assert.equal(chips[0].text, 'IELTS: 75 overall'); assert.equal(chips[0].tone, 'neutral');
+  assert.equal(chips[1].text, 'Duolingo not stated'); assert.equal(chips[1].tone, 'neutral');
+  assert.equal(englishChips({ english: lbs })[1].tone, 'blue');
+});
+
+test('a school that takes no English test gets one friendly green chip', () => {
+  const fuqua = { ielts_min: null, toefl_min: null, duolingo: 'not accepted', pte_min: null, other_tests: null, waiver: 'Fuqua does not accept ESL test scores such as TOEFL, IELTS, PTE or Duolingo; proficiency assessed in the interview.', source_url: null };
+  assert.ok(noEnglishTestNeeded(fuqua));
+  assert.deepEqual(englishChips({ english: fuqua }).map((c) => [c.text, c.tone]), [['No English test needed', 'green']]);
+  const mit = { ielts_min: null, toefl_min: null, duolingo: 'not stated', pte_min: null, other_tests: null, waiver: "No English test required: 'MIT Sloan does not accept TOEFL or IELTS scores.'", source_url: null };
+  assert.deepEqual(englishSummary({ english: mit }), ['No English test needed']);
+  assert.ok(!noEnglishTestNeeded({ ...mit, ielts_min: '7.0' }), 'a published minimum means a test is used');
+  assert.ok(!noEnglishTestNeeded({ ...mit, waiver: 'Waived for English-taught degrees' }));
+});
+
+test('sanitizeText removes research-process remarks and keeps the rest', () => {
+  assert.equal(sanitizeText("Three deadlines a year, all 17:00 UK time. Calendar with exact round dates sits in the 'Application calendar' section and was not in the fetched page text. Applications for August 2027 intake open."),
+    'Three deadlines a year, all 17:00 UK time. Applications for August 2027 intake open.');
+  assert.equal(sanitizeText('Fall 2027 (entry term not stated on fetched pages)'), 'Fall 2027');
+  assert.equal(sanitizeText('entry term not stated on fetched pages'), null);
+  assert.equal(sanitizeText("Decision dates are in the school's Application calendar section, which was not present in the retrievable page text."), null);
+  assert.equal(sanitizeText('GMAT or GRE required; page labels conflict on the score window. Scores valid 5 years.'), 'GMAT or GRE required. Scores valid 5 years.');
+  assert.equal(sanitizeText('Search snippet says 600 words. Limit is 500 words.'), 'Limit is 500 words.');
+  assert.equal(sanitizeText('Intake August 2027 (page body also says August 2026).'), 'Intake August 2027.');
+  assert.equal(sanitizeText('Tell us about yourself.'), 'Tell us about yourself.');
+  assert.equal(sanitizeText(null), null);
+});
+
+test('parsed programs never carry research notes into what students see', () => {
+  const p = parseProgram(row({
+    ...stanfordData, internal_notes: 'SECRET research note', notes: 'Essay 1 prompt is paraphrased from the page extraction; verify exact wording. Visa support available.',
+    deadlines: { value: 'Round 1 Sep 9, 2026. Round 2 dates not present in the retrievable page text.', source_url: null },
+  }))!;
+  const shown = JSON.stringify(p);
+  assert.doesNotMatch(shown, /SECRET|internal_notes|retrievable|fetched|extraction|snippet/i);
+  assert.equal(p.notes, 'Visa support available.');
+  assert.ok(p.paraphrased.notes && p.paraphrased.essays, 'caution flags still come from the raw notes');
+  assert.doesNotMatch(requirementRows(p).map((r) => r.notes).join('\n'), /SECRET|retrievable/);
+});
+
+test('parseRounds reads dated rounds, closes past ones and finds the next open round', () => {
+  const today = new Date(2026, 10, 23); // 23 Nov 2026, local time
+  const fuqua = 'Early Action (binding): app Sep 2, 2026, final decision Oct 15, 2026. Round 1: Sep 30, 2026 (decision Dec 10). Round 2: Jan 5, 2027 (decision Mar 11). Round 3: Mar 25, 2027 (decision May 6).';
+  const r = parseRounds(fuqua, today);
+  assert.deepEqual(r.map((x) => [x.label, x.date, x.closed]), [['Early Action', '2026-09-02', true], ['Round 1', '2026-09-30', true], ['Round 2', '2027-01-05', false], ['Round 3', '2027-03-25', false]]);
+  const next = nextOpenRound(r)!;
+  assert.equal(next.label, 'Round 2'); assert.equal(next.daysLeft, 43);
+  // Day-first dates, R-labels, and a date without a year
+  assert.deepEqual(parseRounds('R1 15 Sep 2026; R2 03 Nov 2026; R3 19 Jan 2027', today).map((x) => [x.label, x.date]), [['Round 1', '2026-09-15'], ['Round 2', '2026-11-03'], ['Round 3', '2027-01-19']]);
+  assert.equal(parseRounds('Round Two submit by Jan 5, 2027 12:00 PM ET; Round 3: Mar 1 (decision Apr 2)', today)[1].date, '2027-03-01');
+  assert.deepEqual(parseRounds('Rolling (International) May 13, 2027', today).map((x) => x.label), ['Rolling']);
+  // Two intakes keep their rounds apart
+  const insead = parseRounds('Aug 2027 intake: R1 15 Sep 2026; R2 03 Nov 2026. Jan 2028 intake: R1 23 Mar 2027', today);
+  assert.equal(insead[2].label, 'Round 1 (Jan 2028 intake)');
+  // No labels: one deadline per part; no dates at all: nothing
+  assert.deepEqual(parseRounds('26 Jan 2027 (5 Feb / 12-13 Feb); 16 Mar 2027 (2 Apr)', today).map((x) => x.label), ['Deadline 1', 'Deadline 2']);
+  assert.deepEqual(parseRounds('Three application deadlines a year, all 17:00 UK time.', today), []);
+  assert.equal(parseRounds('Round 1 Sep 9, 2026', today)[0].closed, true);
+  assert.equal(nextOpenRound(parseRounds('Round 1 Sep 9, 2026', today)), null);
+  assert.equal(parseRounds('Round 1 Nov 23, 2026', today)[0].closed, false, 'the deadline day itself is still open');
+});
+
+test('cost, scholarships and LPDP parse defensively; IDR is approximate at fixed rates', () => {
+  const p = parseProgram(row({
+    ...stanfordData,
+    cost: { tuition: { amount: '82,000', currency: 'usd', basis: 'per year', year: '2026-27', source_url: 'https://x.edu/cost' }, living: { amount: -1, currency: 'USD' }, notes: null },
+    fee_waiver: { value: 'Waived for Forte events', source_url: 'javascript:alert(1)' },
+    scholarships: [{ name: 'Merit award', amount: 'up to full tuition', eligibility: 'All admits', international_ok: true, source_url: 'https://x.edu/s' }, { amount: 'no name' }, 'bad'],
+    lpdp: { on_list: true, list_name: 'LPDP 2026 list' },
+  }))!;
+  assert.deepEqual(p.cost?.tuition, { amount: 82000, currency: 'USD', basis: 'per year', year: '2026-27', source_url: 'https://x.edu/cost' });
+  assert.equal(p.cost?.living, null);
+  assert.equal(p.fee_waiver?.source_url, null);
+  assert.equal(p.scholarships.length, 1); assert.equal(p.scholarships[0].international_ok, true);
+  assert.equal(p.lpdp?.on_list, true);
+  const none = parseProgram(row({ ...stanfordData, lpdp: { on_list: null }, cost: 'lots', scholarships: null }))!;
+  assert.equal(none.lpdp, null); assert.equal(none.cost, null); assert.deepEqual(none.scholarships, []);
+  assert.equal(toIdr(100, 'USD'), 100 * IDR_PER_USD); assert.equal(toIdr(1, 'XYZ'), null);
+  for (const c of ['USD', 'GBP', 'EUR', 'AUD', 'CAD', 'SGD', 'HKD', 'CHF']) assert.ok(IDR_PER[c] > 0, c);
+  assert.equal(formatIdr(1_353_000_000), 'Rp 1.4 billion'); assert.equal(formatIdr(450_000_000), 'Rp 450 million'); assert.equal(formatIdr(75000), 'Rp 75,000');
+});
+
+test('undergrad programs: own track, no GMAT wording', () => {
+  const ug = parseProgram(row({ ...stanfordData, tests: null, application_system: 'Common App', aid_policy: { value: 'Need-blind for all', source_url: null } }, { id: 'u', program_name: 'BSc Computer Science', degree_type: 'undergraduate' }))!;
+  const mba = parseProgram(row({ ...stanfordData }))!;
+  assert.equal(ug.degree_type, 'undergrad'); assert.equal(ug.application_system, 'Common App'); assert.equal(ug.aid_policy?.value, 'Need-blind for all');
+  assert.deepEqual(programsForTrack([ug, mba], 'undergrad').map((p) => p.id), ['u']);
+  assert.deepEqual(programsForTrack([ug, mba], 'grad').map((p) => p.id), ['p1']);
+  const names = requirementChecklist(ug).map((i) => i.name).join(' | ');
+  assert.doesNotMatch(names, /GMAT|GRE|Resume|round/i);
+  assert.match(names, /rapor/);
 });

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { z } from 'zod';
 import { aiConfigured, callClaude, parseJson, requireUser } from '@/lib/ai';
 
-export const NOT_CONFIGURED = { error: 'not_configured', message: 'ANTHROPIC_API_KEY is not set. Add it to .env.local to enable AI features. The rest of the app still works.' } as const;
+export const NOT_CONFIGURED = { error: 'not_configured', message: 'AI feedback is coming soon. Everything else in the app works as usual.' } as const;
 
 /** Auth (401), body validation (400) and AI configuration (503), in that order. */
 export async function guard<S extends z.ZodType>(req: Request, schema: S) {

@@ -7,12 +7,26 @@ import { useQuery } from '@/lib/hooks';
 import { fmtDate } from '@/lib/utils';
 import { REC_AI_KINDS, REC_STATUS_LABEL, buildRecAiRequest, type RecAiKind, type RecommendationRow, type RecommenderRow } from '@/lib/recommendations';
 import { appLabel, errMsg, type AppLite } from '@/components/essays/data';
+import { AI_OFF_MESSAGE, aiEnabled } from '@/lib/features';
 
 type Exp = { id: string; company: string; position: string; description: string | null; achievements: string | null; measurable_impact: string | null };
 type Ach = { id: string; title: string; description: string | null; quantified_impact: string | null };
 type Story = { id: string; title: string; situation: string | null; action: string | null; result: string | null; quantified_impact: string | null };
 
-export function RecAiModal({ rec, recommender, app, onClose }: { rec: RecommendationRow; recommender: RecommenderRow; app: AppLite | undefined; onClose: () => void }) {
+type Props = { rec: RecommendationRow; recommender: RecommenderRow; app: AppLite | undefined; onClose: () => void };
+
+/** AI drafting help for one recommendation. When AI is switched off (lib/features.ts) it only shows a short, friendly note. */
+export function RecAiModal(props: Props) {
+  if (!aiEnabled()) return (
+    <Modal open onClose={props.onClose} title="Drafting help">
+      <p className="text-sm text-secondary">{AI_OFF_MESSAGE}</p>
+      <Button className="mt-3" onClick={props.onClose}>Close</Button>
+    </Modal>
+  );
+  return <RecAiModalInner {...props} />;
+}
+
+function RecAiModalInner({ rec, recommender, app, onClose }: Props) {
   const toast = useToast();
   const exps = useQuery<Exp[]>((sb) => sb.from('work_experiences').select('id,company,position,description,achievements,measurable_impact').is('deleted_at', null).order('start_date', { ascending: false }), []);
   const achs = useQuery<Ach[]>((sb) => sb.from('achievements').select('id,title,description,quantified_impact').is('deleted_at', null).order('achieved_on', { ascending: false }), []);
@@ -38,7 +52,7 @@ export function RecAiModal({ rec, recommender, app, onClose }: { rec: Recommenda
     try {
       const res = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system, prompt, maxTokens }) });
       const body = await res.json().catch(() => null);
-      if (res.status === 503 || body?.error === 'not_configured') { setNotice(body?.message ?? 'AI is not configured. Add ANTHROPIC_API_KEY to .env.local to enable drafts.'); return; }
+      if (res.status === 503 || body?.error === 'not_configured') { setNotice(AI_OFF_MESSAGE); return; }
       if (res.status === 401) { setNotice('You are signed out. Sign in again and retry.'); return; }
       if (!res.ok || typeof body?.text !== 'string') { setNotice(body?.message ?? `The draft failed (status ${res.status}). Try again.`); return; }
       setOut(body.text);

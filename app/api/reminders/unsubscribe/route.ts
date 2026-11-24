@@ -1,4 +1,4 @@
-// One-click unsubscribe from the daily reminder email. The link carries the user id and an HMAC of it
+// One-click unsubscribe from the reminder emails. The link carries the user id and an HMAC of it
 // (REMINDER_SECRET), so it works without signing in and cannot be forged for someone else.
 // GET (link click) and POST (Gmail / Apple Mail "List-Unsubscribe-Post" one-click) both turn reminders off.
 import 'server-only';
@@ -34,7 +34,7 @@ async function unsubscribe(req: NextRequest) {
     const { error: we } = await sb.from('applicant_profiles').update({ settings }).eq('user_id', u!);
     if (we) return page(500, 'Something went wrong', 'We could not update your email settings. Please try again in a minute, or turn email reminders off in Settings.', appUrl);
   }
-  return page(200, 'You are unsubscribed', 'No more daily reminder emails. Your plan and progress are safe. If you miss the nudge, you can turn it back on anytime in Settings.', appUrl);
+  return page(200, 'You are unsubscribed', 'We will not send you reminder emails anymore. Your plan and progress are safe. If you miss them, you can turn them back on anytime in Settings.', appUrl);
 }
 
 export const GET = unsubscribe;

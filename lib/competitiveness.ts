@@ -1,18 +1,25 @@
 // Transparent, rules-based self-assessment. Every score is computed from the applicant's own records;
 // nothing here knows or claims what any school requires. School expectations come only from sourced rows.
-import { filled, latestValidScores, words, NARRATIVE_KEYS, type AchievementRow, type EducationRow, type GoalsRow, type LeadershipRow, type ProfileRow, type TestRow, type WorkRow } from './profile.ts';
+import { filled, fmtMonthYear, latestValidScores, words, ENGLISH_TESTS, NARRATIVE_KEYS, TEST_LABEL, UNDERGRAD_TESTS, type AchievementRow, type EducationRow, type GoalsRow, type LeadershipRow, type ProfileProgram, type ProfileRow, type ProfileTrack, type TestRow, type TestType, type WorkRow } from './profile.ts';
 import { dataFlags, flagWords, FIELD_BY_KEY, formatValue, isSourced, type DataRow } from './schools.ts';
 
-export type DimKey = 'academics' | 'test' | 'experience' | 'progression' | 'leadership' | 'extracurriculars' | 'international' | 'clarity' | 'differentiation';
+export type DimKey = 'academics' | 'test' | 'experience' | 'progression' | 'leadership' | 'extracurriculars' | 'international' | 'clarity' | 'differentiation'
+  | 'grades' | 'english' | 'sat' | 'activities' | 'essays' | 'recommendations';
 export type Confidence = 'low' | 'medium' | 'high';
 export interface Dimension {
   key: DimKey; label: string; score: number | null; confidence: Confidence | null; rule: string;
   evidence: string[]; expectations: string[]; weaknesses: string[]; improvements: string[]; insufficientReason?: string;
+  /** Optional dimensions (for example SAT for test-optional schools) are shown but never count as a gap. */
+  optional?: boolean;
 }
+/** Light essay and recommender facts for the undergrad dimensions. */
+export interface EssayLite { id: string; status: string; words: number }
+export interface RecommenderLite { id: string; statuses: string[] }
 export interface SchoolDataRow extends DataRow { school_name: string }
 export interface AssessInput {
   profile: ProfileRow | null; education: EducationRow[]; tests: TestRow[]; work: WorkRow[]; leadership: LeadershipRow[]; achievements: AchievementRow[];
   goals: GoalsRow | null; schoolData: SchoolDataRow[]; now?: Date;
+  track?: ProfileTrack; program?: ProfileProgram; essays?: EssayLite[]; recommenders?: RecommenderLite[];
 }
 export const DISCLAIMER = 'This is a qualitative self-assessment tool built from the records you entered. It is not an official admissions evaluation, it does not predict outcomes, and schools do not score applicants this way. Use it to spot gaps, not to judge your chances.';
 
@@ -40,6 +47,7 @@ function expectations(rows: SchoolDataRow[], fields: string[], now: Date): strin
 const insufficient = (key: DimKey, label: string, rule: string, reason: string, improvements: string[]): Dimension => ({ key, label, score: null, confidence: null, rule, evidence: [], expectations: [], weaknesses: [], improvements, insufficientReason: reason });
 
 export function assess(inp: AssessInput): Dimension[] {
+  if (inp.track === 'undergrad') return assessUndergrad(inp);
   const now = inp.now ?? new Date(); const sd = inp.schoolData;
   const out: Dimension[] = [];
 
@@ -186,6 +194,118 @@ export function assess(inp: AssessInput): Dimension[] {
         evidence: [`${nOk} of 7 narrative sections have 20 or more words`, `${inp.achievements.length} achievement(s), ${q} with quantified impact`], expectations: ['No sourced school data.'],
         weaknesses: [...(nOk < 4 ? ['Several narrative sections are short or empty.'] : []), ...(q < 3 ? ['Fewer than 3 achievements with quantified impact.'] : [])],
         improvements: [...NARRATIVE_KEYS.filter((k) => words(nar[k]) < 20).map((k) => `Expand "${k.replace(/_/g, ' ')}" to at least 20 words.`).slice(0, 3), ...(q < 3 ? ['Quantify the impact of your achievements.'] : [])] });
+    }
+  }
+  return out;
+}
+
+// ---------- undergrad ----------
+/** Score bands per test, ascending cut points for 2..5. Rough, published-range based, not school requirements. */
+const ENGLISH_CUTS: Partial<Record<TestType, number[]>> = { IELTS: [6, 6.5, 7, 7.5], TOEFL: [79, 90, 100, 110], PTE: [50, 58, 65, 73], DUOLINGO: [105, 115, 125, 135] };
+const SAT_CUTS: Partial<Record<TestType, number[]>> = { SAT: [1200, 1300, 1400, 1500], ACT: [25, 28, 31, 34] };
+const LATER_ESSAY = ['revision', 'final_review', 'approved', 'submitted'];
+const AGREED = ['agreed', 'briefing_sent', 'in_progress', 'submitted'];
+
+function bestBanded(inp: AssessInput, types: TestType[], cuts: Partial<Record<TestType, number[]>>, now: Date) {
+  const l = latestValidScores(inp.tests, now).filter((x) => types.includes(x.type));
+  const scored = l.map((x) => x.latestValid).filter((t): t is TestRow => !!t && t.overall != null).map((t) => ({ t, score: bands(t.overall!, cuts[t.test_type]!) }));
+  const best = scored.reduce<{ t: TestRow; score: number } | null>((a, c) => (!a || c.score > a.score ? c : a), null);
+  return { l, scored, best, planned: l.flatMap((x) => x.planned) };
+}
+
+/**
+ * Undergrad dimensions: school grades, English test, SAT/ACT (optional), activities, essays and recommendations.
+ * No GMAT, work experience or career progression.
+ */
+export function assessUndergrad(inp: AssessInput): Dimension[] {
+  const now = inp.now ?? new Date(); const out: Dimension[] = [];
+
+  // 1 School grades
+  {
+    const rule = 'Uses your best grade average divided by its scale (for example a rapor average of 88 out of 100 is 88%). Score 5 if at least 90%, 4 if at least 80%, 3 if at least 70%, 2 if at least 60%, otherwise 1. Grading differs between schools and countries, so treat this as a rough signal.';
+    const recs = inp.education.filter((e) => e.gpa != null && e.gpa_scale);
+    if (!recs.length) out.push(insufficient('grades', 'School grades', rule, 'No education record has a grade average and scale yet.', ['Add your school and your rapor average (scale 100), or your GPA.']));
+    else {
+      const best = recs.reduce((a, b) => (b.gpa! / b.gpa_scale! > a.gpa! / a.gpa_scale! ? b : a));
+      const ratio = best.gpa! / best.gpa_scale!; const score = bands(ratio, [0.6, 0.7, 0.8, 0.9]);
+      out.push({ key: 'grades', label: 'School grades', score, confidence: recs.length > 1 || best.honors ? 'medium' : 'low', rule,
+        evidence: inp.education.map((e) => `${e.institution}${e.gpa != null && e.gpa_scale ? `: ${e.gpa} out of ${e.gpa_scale}` : ': no grade average yet'}`),
+        expectations: expectations(inp.schoolData, ['avg_gpa'], now),
+        weaknesses: score <= 2 ? [`Your best average is ${(ratio * 100).toFixed(0)}% of the scale, in the lower bands of this rule.`] : [],
+        improvements: [...(!best.honors ? ['Add class rank, awards or olympiad results if you have them.'] : []), 'Keep your grades steady through Grade 12. Universities see your final results.'] });
+    }
+  }
+
+  // 2 English test
+  {
+    const rule = 'Takes your best valid English test (IELTS, TOEFL, PTE or Duolingo, each valid 2 years). Bands for 2 to 5: IELTS 6, 6.5, 7, 7.5; TOEFL 79, 90, 100, 110; PTE 50, 58, 65, 73; Duolingo 105, 115, 125, 135. Below the first band scores 1. Always check each university\'s own minimum.';
+    const { l, scored, best, planned } = bestBanded(inp, ENGLISH_TESTS, ENGLISH_CUTS, now);
+    if (!best) {
+      const reason = planned.length ? `Your ${TEST_LABEL[planned[0].test_type]} is planned${planned[0].test_date ? ` for ${fmtMonthYear(planned[0].test_date)}` : ''}. Add the score once you have it.`
+        : l.some((x) => x.expired.length) ? 'Your English test score is older than 2 years.' : 'No English test score yet.';
+      out.push(insufficient('english', 'English test', rule, reason, planned.length ? ['Book a practice test a few weeks before the real one.'] : ['Plan an IELTS, TOEFL, PTE or Duolingo test. You can add it as "Planned" with a target date.']));
+    } else {
+      out.push({ key: 'english', label: 'English test', score: best.score, confidence: 'high', rule,
+        evidence: scored.map(({ t }) => `${TEST_LABEL[t.test_type]} ${t.overall}${t.test_date ? ` on ${t.test_date}` : ''}`), expectations: expectations(inp.schoolData, ['english_requirement'], now),
+        weaknesses: best.score <= 2 ? ['This score may be below the minimum at some universities.'] : [], improvements: best.score <= 3 ? ['A retake could open more options. Check each university\'s minimum.'] : [] });
+    }
+  }
+
+  // 3 SAT / ACT (optional)
+  {
+    const rule = 'Optional. Takes your best SAT total or ACT composite. Bands for 2 to 5: SAT 1200, 1300, 1400, 1500; ACT 25, 28, 31, 34. Many universities are test-optional, and universities outside the US rarely ask for it.';
+    const { best, scored, planned } = bestBanded(inp, UNDERGRAD_TESTS, SAT_CUTS, now);
+    if (!best) out.push({ ...insufficient('sat', 'SAT or ACT (optional)', rule, planned.length ? `Your ${TEST_LABEL[planned[0].test_type]} is planned. Add the score once you have it.` : 'Optional. Many universities are test-optional. Add a SAT or ACT score only if you take one.', ['Check whether your US universities want a SAT or ACT score.']), optional: true });
+    else out.push({ key: 'sat', label: 'SAT or ACT (optional)', score: best.score, confidence: 'high', rule, optional: true,
+      evidence: scored.map(({ t }) => `${TEST_LABEL[t.test_type]} ${t.overall}`), expectations: ['No sourced school data. Check each university for its SAT policy.'],
+      weaknesses: [], improvements: best.score <= 2 ? ['If a university is test-optional, you can choose not to send a lower score.'] : [] });
+  }
+
+  // 4 Activities and leadership
+  {
+    const rule = 'Starts at 1. Adds 1 for each distinct activity (max 2), 1 if any activity lasted at least 12 months, and 1 if any activity or achievement states an outcome, award or impact. Capped at 5.';
+    if (!inp.leadership.length && !inp.achievements.length) out.push(insufficient('activities', 'Activities and leadership', rule, 'No activities or achievements yet.', ['Add clubs, OSIS, sports, competitions, volunteering, music or a part-time job.']));
+    else {
+      const orgs = new Set(inp.leadership.map((l) => l.organization.trim().toLowerCase())).size;
+      const long = inp.leadership.filter((l) => monthsBetween(l.start_date, l.end_date, now) >= 12);
+      const impact = inp.leadership.some((l) => filled(l.achievements) || filled(l.social_impact) || filled(l.awards)) || inp.achievements.some((a) => filled(a.quantified_impact) || filled(a.description));
+      const score = clamp(1 + Math.min(2, orgs) + (long.length ? 1 : 0) + (impact ? 1 : 0));
+      out.push({ key: 'activities', label: 'Activities and leadership', score, confidence: orgs >= 3 ? 'high' : orgs >= 1 ? 'medium' : 'low', rule,
+        evidence: [...inp.leadership.map((l) => `${l.organization}${l.role ? `, ${l.role}` : ''}`), ...inp.achievements.map((a) => `Achievement: ${a.title}`)],
+        expectations: ['No sourced school data. Universities look for depth and commitment more than a long list.'],
+        weaknesses: [...(!long.length ? ['No activity with a duration of 12 months or more recorded.'] : []), ...(!impact ? ['No outcome, award or impact recorded.'] : [])],
+        improvements: [...(orgs < 2 ? ['Add other activities if you have them, with dates.'] : []), ...(!impact ? ['Say what changed because of your involvement.'] : [])] });
+    }
+  }
+
+  // 5 Essays
+  {
+    const rule = 'Starts at 1. Adds 1 if you have started an essay, 1 if any draft has 250 or more words, 1 if any essay is in revision or later, and 1 if at least 3 personal narrative sections have 20 or more words. Capped at 5. It measures progress, not quality.';
+    const es = inp.essays ?? []; const nar = inp.profile?.personal_narrative ?? {}; const nOk = NARRATIVE_KEYS.filter((k) => words(nar[k]) >= 20).length;
+    if (!es.length && !nOk) out.push(insufficient('essays', 'Essays', rule, 'No essay or personal statement started yet.', ['Start your personal statement. A messy first draft is perfect.']));
+    else {
+      const drafted = es.some((e) => e.words > 0); const long = es.some((e) => e.words >= 250); const later = es.some((e) => LATER_ESSAY.includes(e.status));
+      const score = clamp(1 + (drafted ? 1 : 0) + (long ? 1 : 0) + (later ? 1 : 0) + (nOk >= 3 ? 1 : 0));
+      out.push({ key: 'essays', label: 'Essays', score, confidence: es.length ? 'medium' : 'low', rule,
+        evidence: [`${es.length} essay(s), longest draft ${Math.max(0, ...es.map((e) => e.words))} words`, `${nOk} of 7 narrative sections have 20 or more words`],
+        expectations: ['No sourced school data. Check each university\'s prompt and word limit.'],
+        weaknesses: [...(!long ? ['No draft has reached 250 words yet.'] : []), ...(!later ? ['No essay has been revised yet.'] : [])],
+        improvements: [...(!drafted ? ['Write a first draft, even a short one.'] : []), ...(!later ? ['Ask a teacher or friend to read a draft, then revise it.'] : [])] });
+    }
+  }
+
+  // 6 Recommendations
+  {
+    const rule = 'Starts at 1. Adds 1 for each recommender (max 2), 1 if any recommender has agreed or is writing, and 1 if any letter is submitted. Capped at 5.';
+    const rs = inp.recommenders ?? [];
+    if (!rs.length) out.push(insufficient('recommendations', 'Recommendations', rule, 'No teacher or counselor added yet.', ['Add a teacher or counselor who knows you well.']));
+    else {
+      const agreed = rs.some((r) => r.statuses.some((s) => AGREED.includes(s))); const sub = rs.some((r) => r.statuses.includes('submitted'));
+      const score = clamp(1 + Math.min(2, rs.length) + (agreed ? 1 : 0) + (sub ? 1 : 0));
+      out.push({ key: 'recommendations', label: 'Recommendations', score, confidence: 'medium', rule,
+        evidence: [`${rs.length} recommender(s)`, agreed ? 'At least one has agreed to write.' : 'No one has agreed yet.'],
+        expectations: ['No sourced school data. Many universities ask for a counselor letter plus one or two teachers.'],
+        weaknesses: [...(!agreed ? ['No recommender has agreed yet.'] : [])], improvements: [...(rs.length < 2 ? ['Add a second teacher, ideally in the subject you want to study.'] : []), ...(!agreed ? ['Ask early and give them a short note about you.'] : [])] });
     }
   }
   return out;

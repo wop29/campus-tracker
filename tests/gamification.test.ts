@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   levelFromXp, levelProgress, xpToReach, totalXp, dayKey, addDays, weekStartKey, computeStreak, streakFromDays, safeTz,
-  buildQuests, weeklySummary, computeBadges, nextBadges, detectCelebration, parseGamificationSettings, XP_TABLE, DAILY_GOAL_DEFAULT, type XpEvent,
+  buildQuests, weeklySummary, computeBadges, nextBadges, detectCelebration, parseGamificationSettings, XP_TABLE, ACTIVE_XP_TABLE, DAILY_GOAL_DEFAULT, type XpEvent,
 } from '../lib/gamification.ts';
 import { computeJourney, EMPTY_JOURNEY_DATA, UNITS, type JourneyData } from '../lib/journey.ts';
 
@@ -159,4 +159,15 @@ test('journey: everything done gives 100% and no current lesson', () => {
     decide: { ...EMPTY_JOURNEY_DATA.decide, submitted: 1 },
   };
   const j = computeJourney(all); assert.equal(j.overallPct, 100); assert.equal(j.currentLessonId, null); assert.ok(j.units.every((u) => u.crowned));
+});
+
+test('badges: every badge has art (Source Hunter and Funding Push included) and no interview badge or XP rule is shown', () => {
+  const b = computeBadges([], new Date('2026-11-16T12:00:00Z'), 'UTC');
+  assert.ok(b.every((x) => typeof x.art === 'string' && x.art.startsWith('/art/badge/')));
+  assert.equal(b.find((x) => x.id === 'source-hunter')!.art, '/art/badge/first-school.webp');
+  assert.equal(b.find((x) => x.id === 'funding-push')!.art, '/art/badge/brave-applicant.webp');
+  assert.ok(!b.some((x) => /interview/i.test(`${x.id} ${x.title} ${x.description}`)));
+  assert.ok(!ACTIVE_XP_TABLE.some((x) => x.kind.startsWith('interview_')));
+  const w = weeklySummary([{ kind: 'interview_completed', points: 20, occurred_at: '2026-11-16T10:00:00Z' }], new Date('2026-11-16T12:00:00Z'), 'UTC');
+  assert.equal(w.totalXp, 20); assert.equal(w.top.length, 0);
 });

@@ -70,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="hidden text-xs text-secondary sm:inline">{email}</span>
             <Button variant="secondary" size="sm" onClick={async () => { await supabaseBrowser().auth.signOut(); router.replace('/login'); }}>Sign out</Button>
           </header>
-          <main className="flex-1 overflow-auto p-4 md:p-6">{needsOnboarding === false ? children : <Loading label="Getting things ready..." />}</main>
+          <main className="flex-1 overflow-auto p-4 md:p-6">{needsOnboarding === true && pathname !== WELCOME ? <Loading label="Getting things ready..." /> : children}</main>
         </div>
       </div>
     </ToastProvider>

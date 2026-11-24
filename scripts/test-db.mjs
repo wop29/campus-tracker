@@ -127,7 +127,7 @@ await test('input constraints: negative fee, bad stage, GPA above scale, end bef
 });
 await test('school data points require a source (name and url)', async () => {
   await rejects(as(A, `insert into public.school_admissions_data(school_id,field,value_num,source_name) values ($1,'avg_gmat',700,'x')`, [schoolA]), 'null|source_url');
-  await as(A, `insert into public.school_admissions_data(school_id,field,value_num,source_name,source_url) values ($1,'avg_gmat',700,'Official class profile','https://example.edu')`, [schoolA]);
+  await as(A, `insert into public.school_admissions_data(school_id,field,value_num,source_name,source_url) values ($1,'deadline_r3',700,'Official class profile','https://example.edu')`, [schoolA]);
 });
 await test('saved comparison limited to 2-5 schools', async () => {
   const ids = (await as(A, 'select id from public.schools limit 6')).rows.map((r) => r.id);
@@ -343,6 +343,67 @@ await test('023: decision_dates on programs (read only), expected_result_on and 
   await db.query(`delete from public.program_requirements where id=$1`, [pid]);
 });
 
+
+// ---- 026: track-aware default checklist (agent E)
+await test('026: undergrad owner gets the undergrad template; grad keeps the grad one; existing rows untouched; RLS kept; idempotent', async () => {
+  const before = (await as(A, `select count(*)::int n, string_agg(name, '|' order by id) s from public.application_requirements`)).rows[0];
+  await db.exec(readFileSync(path.join(dir, '026_undergrad_template.sql'), 'utf8'));
+  const after = (await as(A, `select count(*)::int n, string_agg(name, '|' order by id) s from public.application_requirements`)).rows[0];
+  ok(before.n === after.n && before.s === after.s, 'existing requirement rows changed');
+  const prev = (await db.query(`select settings from public.applicant_profiles where user_id=$1`, [A])).rows[0]?.settings ?? null;
+  const names = async (app) => (await as(A, `select name, mandatory from public.application_requirements where application_id=$1 order by sort_order`, [app])).rows;
+  // grad (no profile or grad track)
+  await as(A, `insert into public.applicant_profiles(user_id, settings) values ($1, '{"onboarding":{"track":"grad"}}') on conflict (user_id) do update set settings = jsonb_set(coalesce(public.applicant_profiles.settings,'{}'), '{onboarding}', coalesce(public.applicant_profiles.settings->'onboarding','{}') || '{"track":"grad"}')`, [A]);
+  const g = (await as(A, `insert into public.applications(school_id, program, intake, round) values ($1,'Grad 026','Fall 2027','R1') returning id`, [schoolA])).rows[0].id;
+  const gn = await names(g);
+  ok(gn.length === 17 && gn.some((r) => r.name === 'GMAT/GRE') && gn.find((r) => r.name === 'Interview preparation')?.mandatory === false, 'grad template: ' + gn.map((r) => r.name).join(','));
+  // undergrad
+  await as(A, `update public.applicant_profiles set settings = jsonb_set(settings, '{onboarding,track}', '"undergrad"') where user_id=$1`, [A]);
+  const u = (await as(A, `insert into public.applications(school_id, program, intake) values ($1,'Undergraduate (first-year)','Semester 1 2028 (Feb)') returning id`, [schoolA])).rows[0].id;
+  const un = await names(u);
+  const want = ['Application form', 'School transcripts (rapor) and translation', 'English test (IELTS/TOEFL/Duolingo)', 'SAT/ACT (if the school requires it)', 'Personal statement',
+    'Counselor or teacher recommendation', 'Financial documents (bank statement or sponsor letter)', 'Passport copy', 'Application fee', 'Submission confirmation'];
+  ok(JSON.stringify(un.map((r) => r.name)) === JSON.stringify(want), 'undergrad template: ' + un.map((r) => r.name).join(','));
+  ok(!un.some((r) => /GMAT|Employment|Interview/.test(r.name)), 'MBA items in undergrad template');
+  ok(un.find((r) => r.name.startsWith('SAT/ACT')).mandatory === false && un.filter((r) => r.mandatory).length === 9, 'mandatory flags');
+  const owner = (await as(A, `select count(*)::int n from public.application_requirements where application_id=$1 and user_id=$2 and is_default`, [u, A])).rows[0].n;
+  ok(owner === 10, 'rows not owned by A or not default: ' + owner);
+  ok((await as(B, `select count(*)::int n from public.application_requirements where application_id=$1`, [u])).rows[0].n === 0, 'B can see A undergrad checklist');
+  // ready guard still ignores Submission confirmation
+  await as(A, `update public.application_requirements set status='complete' where application_id=$1 and mandatory and name <> 'Submission confirmation'`, [u]);
+  await as(A, `update public.applications set stage='preparing' where id=$1`, [u]);
+  await as(A, `update public.applications set stage='ready' where id=$1`, [u]);
+  // an undergrad user starting a grad program gets the grad template; a grad user starting an undergrad program gets the undergrad one
+  await db.query(`insert into public.program_requirements(school_name, program_name, degree_type, data) values ('UG Test Uni','BCom 026','undergrad','{}'), ('UG Test Uni','MBA 026','mba','{}')`);
+  const ug = (await db.query(`select id from public.program_requirements where program_name='BCom 026'`)).rows[0].id;
+  const mba = (await db.query(`select id from public.program_requirements where program_name='MBA 026'`)).rows[0].id;
+  const m = (await as(A, `insert into public.applications(school_id, program, intake, program_requirement_id) values ($1,'MBA 026','Fall 2027',$2) returning id`, [schoolA, mba])).rows[0].id;
+  ok((await names(m)).some((r) => r.name === 'GMAT/GRE'), 'grad program should use grad template');
+  await as(A, `update public.applicant_profiles set settings = jsonb_set(settings, '{onboarding,track}', '"grad"') where user_id=$1`, [A]);
+  const b = (await as(A, `insert into public.applications(school_id, program, intake, program_requirement_id) values ($1,'BCom 026','Fall 2027',$2) returning id`, [schoolA, ug])).rows[0].id;
+  ok((await names(b)).some((r) => r.name === 'Passport copy'), 'undergrad program should use undergrad template');
+  // B with no profile at all gets the grad template on their own application
+  const bs = (await as(B, `insert into public.schools(name, country) values ('B 026 School','Australia') returning id`)).rows[0].id;
+  const ba = (await as(B, `insert into public.applications(school_id, program, intake) values ($1,'MSc','Fall 2027') returning id`, [bs])).rows[0].id;
+  ok((await as(B, `select count(*)::int n from public.application_requirements where application_id=$1`, [ba])).rows[0].n === 17, 'B default template');
+  // clean up
+  for (const id of [g, u, m, b]) await as(A, `delete from public.applications where id=$1`, [id]);
+  await as(B, `delete from public.applications where id=$1`, [ba]); await as(B, `delete from public.schools where id=$1`, [bs]);
+  await db.query(`delete from public.program_requirements where id in ($1,$2)`, [ug, mba]);
+  if (prev == null) await db.query(`delete from public.applicant_profiles where user_id=$1`, [A]);
+  else await db.query(`update public.applicant_profiles set settings=$2 where user_id=$1`, [A, prev]);
+});
+await test('028: new test types and planned tests (no date, no score); bad values rejected; RLS kept; idempotent', async () => {
+  await db.exec(readFileSync(path.join(dir, '028_profile_tests.sql'), 'utf8'));
+  for (const [t, o] of [['SAT', 1450], ['ACT', 32], ['PTE', 70], ['DUOLINGO', 125]]) await as(A, `insert into public.test_scores(test_type, overall, test_date) values ($1, $2, date '2026-05-01')`, [t, o]);
+  const p = (await as(A, `insert into public.test_scores(test_type, status) values ('IELTS','planned') returning id, status, test_date, overall`)).rows[0];
+  ok(p.status === 'planned' && p.test_date === null && p.overall === null, JSON.stringify(p));
+  const d = (await as(A, `insert into public.test_scores(test_type) values ('TOEFL') returning status`)).rows[0]; ok(d.status === 'taken', 'default status ' + d.status);
+  await rejects(as(A, `insert into public.test_scores(test_type) values ('XYZ')`), 'check');
+  await rejects(as(A, `insert into public.test_scores(test_type, status) values ('SAT','maybe')`), 'check');
+  ok((await as(B, `select count(*)::int n from public.test_scores where id=$1`, [p.id])).rows[0].n === 0, 'B can see A planned test');
+  ok((await as(B, `update public.test_scores set status='taken' where id=$1`, [p.id])).affectedRows === 0, 'B could edit A test');
+});
 
 console.table(results.map(([n, s, e]) => ({ test: n, result: s, detail: e || '' })));
 const failed = results.filter((r) => r[1] === 'FAIL').length;

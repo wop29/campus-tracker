@@ -1,5 +1,4 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Flame, PartyPopper, Zap } from 'lucide-react';
 import { Card, ErrorBox, Loading } from '@/components/ui';
@@ -12,10 +11,7 @@ import { BadgeShelf } from '@/components/gamification/badge-shelf';
 import { WeeklySummaryCard } from '@/components/gamification/weekly-summary';
 import { DailyGoalControl } from '@/components/gamification/daily-goal';
 import { ProgressRing } from '@/components/gamification/progress-ring';
-import { computeJourney, type Journey } from '@/lib/journey';
-import { parseOnboarding, type Onboarding } from '@/lib/onboarding';
-import { loadOnboarding } from '@/components/onboarding/data';
-import { supabaseBrowser } from '@/lib/supabase/client';
+import { nextStep, type Journey } from '@/lib/journey';
 
 const H = ({ children }: { children: React.ReactNode }) => <h2 className="mb-3 text-base font-extrabold">{children}</h2>;
 
@@ -30,18 +26,13 @@ function encouragement(j: Journey): string {
 }
 
 export default function JourneyPage() {
+  // The journey (and its single next step) is computed once in useGamification from the onboarding answers,
+  // so this page, the Overview and the Overview strip always show the same step.
   const g = useGamification(true);
-  const [ob, setOb] = useState<Onboarding | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    loadOnboarding(supabaseBrowser()).then((o) => { if (!cancelled) setOb(o); }).catch(() => { if (!cancelled) setOb(parseOnboarding(null)); });
-    return () => { cancelled = true; };
-  }, []);
-  const journey = useMemo(() => (ob ? computeJourney(g.journey.data, { track: ob.track, program: ob.program, stage: ob.stage }) : g.journey), [ob, g.journey]);
-  if ((g.loading && g.events.length === 0 && !g.error) || !ob) return <Loading label="Loading your journey..." />;
+  const journey = g.journey;
+  if (g.loading && g.events.length === 0 && !g.error) return <Loading label="Loading your journey..." />;
   if (g.error) return <ErrorBox message={g.error} onRetry={() => void g.reload()} />;
-  const current = journey.units.flatMap((u) => u.lessons).find((l) => l.state === 'current');
-  const currentUnit = journey.units.find((u) => u.id === journey.currentUnitId);
+  const current = nextStep(journey);
   // Mochi: party for fresh wins, a thinking face when the streak needs a step, a quiet read otherwise.
   const headerPose = g.celebration ? 'party' : g.streak.atRisk ? 'thinking' : !journey.currentLessonId ? 'cheer' : 'reading';
   const pathPose = g.celebration ? 'cheer' : g.streak.atRisk ? 'thinking' : 'checklist';
@@ -78,7 +69,7 @@ export default function JourneyPage() {
       <section aria-label="Do this next" className="mb-6">
         {current ? (
           <Link href={current.href} className="group block rounded-3xl border-2 border-b-[6px] border-fun-green-dark bg-fun-green p-5 text-on-fun transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:p-6">
-            <p className="text-xs font-extrabold uppercase tracking-wide opacity-80">Do this next · Step {journey.step} of {journey.total}{currentUnit ? ` · ${currentUnit.title}` : ''}</p>
+            <p className="text-xs font-extrabold uppercase tracking-wide opacity-80">Do this next · Step {current.step} of {current.total}{current.unitTitle ? ` · ${current.unitTitle}` : ''}</p>
             <p className="mt-1 text-2xl font-extrabold sm:text-3xl">{current.title}</p>
             <p className="mt-1 text-sm font-bold opacity-90">{current.hint}</p>
             {current.target > 1 && <p className="mt-1 text-xs font-bold">{current.current} of {current.target} so far</p>}

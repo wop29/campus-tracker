@@ -8,22 +8,23 @@ import { Confetti } from '@/components/confetti';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { THEMES, DEFAULT_THEME, applyTheme, isThemeId, readThemeCookie, writeThemeCookie, type ThemeId } from '@/components/theme/themes';
 import {
-  DEFAULT_ONBOARDING, DESTINATIONS, DESTINATION_LABEL, REMINDER_HOURS, browserTimeZone, nextIntakes, parseOnboarding,
-  type Destination, type Onboarding, type Program, type Stage, type Track,
+  DEFAULT_ONBOARDING, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, REMINDER_HOURS, browserTimeZone, intakeOptions, parseOnboarding, timeZoneOptions,
+  type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 import { OptionCard, onGroupKeyDown } from './option-card';
 import { loadSettings, saveOnboarding } from './data';
+import { OnboardingSkeleton } from './skeleton';
 
 const STEPS = 4;
 const MASCOT_LINES: { pose: MascotPose; line: string }[] = [
-  { pose: 'wave', line: 'Hi, I am Mochi! Four quick taps and you are set. No essays today, promise.' },
+  { pose: 'wave', line: 'Hi, I am Mochi! Four quick steps and you are set. No essays today, promise.' },
   { pose: 'search', line: 'Dream big. You can pick more than one country.' },
-  { pose: 'thinking', line: 'Joining late is fine, we will start you where you are.' },
+  { pose: 'thinking', line: 'No wrong answers here. Pick the one closest to today.' },
   { pose: 'cheer', line: 'Last one! Make this space feel like yours.' },
 ];
 const PROGRAM_OPTIONS: { id: Program; label: string }[] = [{ id: 'mba', label: 'MBA' }, { id: 'masters', label: "Master's" }, { id: 'phd', label: 'PhD' }];
-const DEST_SHORT: Record<Destination, string> = { us: 'US', canada: 'CA', australia: 'AU', uk: 'UK' };
+const DEST_SHORT: Record<Destination, string> = { us: 'US', canada: 'CA', australia: 'AU', uk: 'UK', singapore: 'SG', hongkong: 'HK' };
 const STAGE_OPTIONS: { id: Stage; title: string; subtitle: string; icon: React.ReactNode }[] = [
   { id: 'exploring', title: 'Just exploring', subtitle: 'Still figuring out if and where to apply.', icon: <Compass size={24} /> },
   { id: 'shortlisting', title: 'Picking schools', subtitle: 'Building a list of places I like.', icon: <ListChecks size={24} /> },
@@ -37,7 +38,11 @@ export function OnboardingWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [track, setTrack] = useState<Track | null>(null);
-  const [program, setProgram] = useState<Program | null>(null);
+  const [programs, setPrograms] = useState<Program[]>([]); // first choice first
+  const [fields, setFields] = useState<Field[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [timezone, setTimezone] = useState<string>(DEFAULT_ONBOARDING.timezone);
+  const [tzOpen, setTzOpen] = useState(false);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [intake, setIntake] = useState<string>(NOT_SURE);
   const [stage, setStage] = useState<Stage | null>(null);
@@ -51,12 +56,14 @@ export function OnboardingWizard() {
   const initialTheme = useRef<ThemeId>(DEFAULT_THEME);
   const heading = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
-  const intakes = useMemo(() => nextIntakes(new Date()), []);
+  const intakes = useMemo(() => intakeOptions(destinations, new Date()), [destinations]);
+  const tzList = useMemo(() => (tzOpen ? timeZoneOptions() : []), [tzOpen]);
 
   // Prefill from anything saved before (for example when the user comes back to /welcome).
   useEffect(() => {
     const t = readThemeCookie() ?? DEFAULT_THEME;
     setTheme(t); initialTheme.current = t;
+    setTimezone(browserTimeZone());
     let cancelled = false;
     void (async () => {
       try {
@@ -65,10 +72,12 @@ export function OnboardingWizard() {
         if (isThemeId(s.theme)) { setTheme(s.theme); initialTheme.current = s.theme; }
         if (!s.onboarding) return;
         const ob = parseOnboarding(s);
-        setTrack(ob.track); setProgram(ob.program ?? null); setDestinations(ob.destinations); setStage(ob.stage);
+        setTrack(ob.track); setPrograms(ob.programs ?? (ob.program ? [ob.program] : [])); setFields(ob.fields ?? []);
+        setDestinations(ob.destinations); setStage(ob.stage);
         if (ob.intake) setIntake(ob.intake);
         setEmail(ob.reminders.email); setHour(ob.reminders.hourLocal);
-      } catch { /* start fresh */ }
+        if (ob.done) setTimezone(ob.timezone);
+      } catch { /* start fresh */ } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -80,14 +89,15 @@ export function OnboardingWizard() {
   }, [step]);
 
   const valid = [
-    track === 'undergrad' || (track === 'grad' && program !== null),
+    track === 'undergrad' || (track === 'grad' && programs.length > 0),
     destinations.length > 0,
     stage !== null,
     true,
   ][step];
 
   function pickTheme(id: ThemeId) { setTheme(id); applyTheme(id); }
-  function toggleDest(d: Destination) { setDestinations((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d])); }
+  const toggle = <T,>(x: T) => (cur: T[]) => (cur.includes(x) ? cur.filter((y) => y !== x) : [...cur, x]);
+  function toggleDest(d: Destination) { setDestinations(toggle(d)); }
 
   async function save(ob: Onboarding, extra: Record<string, unknown>) {
     setSaving(true); setError(null);
@@ -103,9 +113,10 @@ export function OnboardingWizard() {
 
   async function finish() {
     const ob: Onboarding = {
-      done: true, track: track ?? 'grad', ...(track === 'grad' && program ? { program } : {}), destinations,
+      done: true, track: track ?? 'grad', ...(track === 'grad' && programs.length ? { program: programs[0], programs } : {}),
+      ...(fields.length ? { fields } : {}), destinations,
       ...(intake !== NOT_SURE ? { intake } : {}), stage: stage ?? 'exploring',
-      reminders: { email, hourLocal: hour }, timezone: browserTimeZone(),
+      reminders: { email, hourLocal: hour }, timezone,
     };
     if (!(await save(ob, { theme }))) return;
     setFinished(true); setFire((f) => f + 1);
@@ -114,7 +125,7 @@ export function OnboardingWizard() {
 
   async function skip() {
     applyTheme(initialTheme.current); setTheme(initialTheme.current);
-    const ob: Onboarding = { ...DEFAULT_ONBOARDING, reminders: { ...DEFAULT_ONBOARDING.reminders }, done: true, timezone: browserTimeZone() };
+    const ob: Onboarding = { ...DEFAULT_ONBOARDING, reminders: { ...DEFAULT_ONBOARDING.reminders }, done: true, timezone };
     if (await save(ob, {})) router.push('/journey');
   }
 
@@ -130,6 +141,8 @@ export function OnboardingWizard() {
       </div>
     );
   }
+
+  if (loading) return <OnboardingSkeleton />;
 
   const m = MASCOT_LINES[step];
   const radioTab = <T,>(value: T, selected: T | null, first: T) => (selected === null ? value === first : value === selected);
@@ -165,10 +178,22 @@ export function OnboardingWizard() {
             </div>
             {track === 'grad' && (
               <div className="mt-5">
-                <p id="program-label" className="mb-2 text-sm font-extrabold">Which program?</p>
-                <div role="radiogroup" aria-labelledby="program-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+                <p id="program-label" className="text-sm font-extrabold">Which programs?</p>
+                <p id="program-hint" className="mb-2 text-xs text-secondary">Pick all you are thinking about. Your first pick is your main one.</p>
+                <div role="group" aria-labelledby="program-label" aria-describedby="program-hint" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, false)}>
                   {PROGRAM_OPTIONS.map((p) => (
-                    <OptionCard key={p.id} size="chip" selected={program === p.id} tabbable={radioTab<Program>(p.id, program, 'mba')} onSelect={() => setProgram(p.id)} title={p.label} />
+                    <OptionCard key={p.id} size="chip" multi selected={programs.includes(p.id)} onSelect={() => setPrograms(toggle(p.id))} title={programs[0] === p.id && programs.length > 1 ? `${p.label} (main)` : p.label} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {track !== null && (
+              <div className="mt-5">
+                <p id="fields-label" className="text-sm font-extrabold">What do you want to study? <span className="font-bold text-secondary">(optional)</span></p>
+                <p id="fields-hint" className="mb-2 text-xs text-secondary">Tap any that fit, or skip it.</p>
+                <div role="group" aria-labelledby="fields-label" aria-describedby="fields-hint" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, false)}>
+                  {FIELDS.map((f) => (
+                    <OptionCard key={f} size="chip" multi selected={fields.includes(f)} onSelect={() => setFields(toggle(f))} title={FIELD_LABEL[f]} />
                   ))}
                 </div>
               </div>
@@ -240,19 +265,37 @@ export function OnboardingWizard() {
 
             <div className="mt-6 rounded-2xl border-2 bg-surface p-4">
               <div className="flex items-center justify-between gap-3">
-                <span id="nudge-label" className="text-sm font-extrabold">Send me a short daily email nudge</span>
+                <span id="nudge-label" className="text-sm font-extrabold">Gentle email reminders (only when it helps, never daily)</span>
                 <button type="button" role="switch" aria-checked={email} aria-labelledby="nudge-label" onClick={() => setEmail((v) => !v)}
                   className={cn('relative h-8 w-14 shrink-0 rounded-full border-2 border-b-4 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent', email ? 'border-fun-green-dark bg-fun-green' : 'border-border bg-bg')}>
                   <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all', email ? 'left-7' : 'left-1')} aria-hidden />
                 </button>
               </div>
-              <p className="mt-1 text-xs text-secondary">One small next step, once a day. Turn it off anytime in Settings.</p>
+              <p className="mt-1 text-xs text-secondary">A short note when a deadline is close or you have been away for a while. Turn it off anytime in Settings.</p>
               {email && (
-                <div role="radiogroup" aria-label="Nudge time" className="mt-3 flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
-                  {HOUR_OPTIONS.map((h) => (
-                    <OptionCard key={h.hour} size="chip" selected={hour === h.hour} tabbable={hour === h.hour || (!HOUR_OPTIONS.some((x) => x.hour === hour) && h.hour === 19)} onSelect={() => setHour(h.hour)} title={h.label} />
-                  ))}
-                </div>
+                <>
+                  <p id="time-label" className="mb-2 mt-3 text-xs font-extrabold">Best time for you</p>
+                  <div role="radiogroup" aria-labelledby="time-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+                    {HOUR_OPTIONS.map((h) => (
+                      <OptionCard key={h.hour} size="chip" selected={hour === h.hour} tabbable={hour === h.hour || (!HOUR_OPTIONS.some((x) => x.hour === hour) && h.hour === 19)} onSelect={() => setHour(h.hour)} title={h.label} />
+                    ))}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-secondary">
+                    <span>{hour}:00 in <span className="font-extrabold text-ink">{timezone.replace(/_/g, ' ')}</span></span>
+                    {!tzOpen && (
+                      <button type="button" onClick={() => setTzOpen(true)} className="min-h-11 rounded-lg px-2 font-extrabold text-accent underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Change time zone</button>
+                    )}
+                  </div>
+                  {tzOpen && (
+                    <label className="mt-2 block text-xs font-extrabold">
+                      Your time zone
+                      <select value={timezone} onChange={(e) => setTimezone(e.target.value)}
+                        className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-bold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                        {(tzList.includes(timezone) ? tzList : [timezone, ...tzList]).map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </>
               )}
             </div>
           </fieldset>

@@ -10,7 +10,8 @@ import { cn, fmtDate } from '@/lib/utils';
 import { applicantMetrics, buildComparison, comparisonToCsv, MAX_COMPARE, MIN_COMPARE, type DataRow, type DeadlineInput } from '@/lib/schools';
 import type { EducationRow, GoalsRow, TestRow } from '@/lib/profile';
 import { currentUserId } from '@/components/profile/data';
-import { SchoolsNav, SourceLink, type SchoolRow } from './shared';
+import { SourceLink, type SchoolRow } from './shared';
+import { CatalogueNav } from './catalogue-nav';
 
 interface Saved { id: string; name: string; school_ids: string[]; created_at: string }
 interface Extra { data: DataRow[]; programs: { school_id: string; duration_months: number | null; format: string | null }[]; deadlines: DeadlineInput[]; goals: GoalsRow | null; tests: TestRow[]; education: EducationRow[] }
@@ -72,9 +73,9 @@ export function CompareView() {
   const list = (schools.data ?? []).filter((s) => !onlyPf || s.in_portfolio || sel.includes(s.id));
   return (
     <div>
-      <PageHeader title="School Portfolio" subtitle="Compare 2 to 5 schools side by side. Only sourced data is shown." />
-      <SchoolsNav active="compare" />
-      {schools.loading && !schools.data ? <Loading /> : schools.error ? <ErrorBox message={schools.error} onRetry={() => void schools.reload()} /> : (schools.data ?? []).length === 0 ? <EmptyState title="No schools to compare" hint="Add schools in the All schools view first." /> : (
+      <PageHeader title="Compare universities" subtitle="Compare 2 to 5 schools on your list side by side. Only sourced data is shown." />
+      <CatalogueNav active="compare" />
+      {schools.loading && !schools.data ? <Loading /> : schools.error ? <ErrorBox message={schools.error} onRetry={() => void schools.reload()} /> : (schools.data ?? []).length === 0 ? <EmptyState title="No schools to compare" hint="Add universities to your list first." action={<Link href="/schools?view=find" className="text-sm font-bold text-accent underline">Find universities</Link>} /> : (
         <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
           <div className="space-y-3">
             <Card className="space-y-2">

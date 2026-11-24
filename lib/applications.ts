@@ -61,7 +61,7 @@ const moneyField = z.union([z.string(), z.number()]).optional().transform((v, ct
   return n;
 });
 export const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD', 'HKD', 'CHF', 'CNY', 'IDR', 'INR', 'JPY'];
-export const TIMEZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Toronto', 'Europe/London', 'Europe/Paris', 'Europe/Madrid', 'Europe/Zurich', 'Asia/Jakarta', 'Asia/Singapore', 'Asia/Hong_Kong', 'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney', 'UTC'];
+export const TIMEZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles', 'Pacific/Honolulu', 'America/Toronto', 'America/Vancouver', 'America/Edmonton', 'America/Winnipeg', 'America/Halifax', 'Europe/London', 'Europe/Paris', 'Europe/Madrid', 'Europe/Zurich', 'Asia/Jakarta', 'Asia/Singapore', 'Asia/Hong_Kong', 'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney', 'Australia/Melbourne', 'Australia/Brisbane', 'Australia/Adelaide', 'Australia/Perth', 'Australia/Hobart', 'Pacific/Auckland', 'UTC'];
 
 export const CREATE_STAGES: Stage[] = ['researching', 'shortlisted', 'preparing'];
 export const ApplicationSchema = z.object({
@@ -122,6 +122,114 @@ export const SubmissionSchema = z.object({
   submission_notes: optText,
 });
 export const PortalUrlSchema = z.string().trim().max(500).refine((v) => v === '' || /^https?:\/\/\S+$/i.test(v), 'Enter a full link starting with http:// or https://');
+
+/* ------------------------------------------------------------------ create-dialog defaults (track and country aware) */
+export type AppTrack = 'grad' | 'undergrad';
+export type CountryCode = 'US' | 'UK' | 'CA' | 'AU' | 'SG' | 'HK' | 'FR' | 'ES' | 'CH' | 'CN' | 'NZ' | 'DE' | 'NL' | 'IE' | 'IT' | 'JP';
+const COUNTRY_ALIASES: [CountryCode, RegExp][] = [
+  ['US', /^(us|usa|u\.s\.a?\.?|united states( of america)?|america)$/],
+  ['UK', /^(uk|u\.k\.|gb|great britain|united kingdom|england|scotland|wales|northern ireland|britain)$/],
+  ['CA', /^(ca|can|canada)$/], ['AU', /^(au|aus|australia)$/], ['SG', /^(sg|singapore)$/], ['HK', /^(hk|hong kong( sar)?)$/],
+  ['FR', /^(fr|france)$/], ['ES', /^(es|spain|españa|espana)$/], ['CH', /^(ch|switzerland|schweiz|suisse)$/], ['CN', /^(cn|china|prc|people'?s republic of china)$/],
+  ['NZ', /^(nz|new zealand)$/], ['DE', /^(de|germany|deutschland)$/], ['NL', /^(nl|netherlands|the netherlands|holland)$/], ['IE', /^(ie|ireland)$/],
+  ['IT', /^(it|italy|italia)$/], ['JP', /^(jp|japan)$/],
+];
+/** Normalises a free-text school country ("United States", "USA", "UK", "England") to a short code. Null when unknown. */
+export function countryCode(country: string | null | undefined): CountryCode | null {
+  const c = (country ?? '').trim().toLowerCase();
+  if (!c) return null;
+  for (const [code, re] of COUNTRY_ALIASES) if (re.test(c)) return code;
+  return null;
+}
+const COUNTRY_CURRENCY: Partial<Record<CountryCode, string>> = { US: 'USD', UK: 'GBP', CA: 'CAD', AU: 'AUD', SG: 'SGD', HK: 'HKD', FR: 'EUR', ES: 'EUR', DE: 'EUR', NL: 'EUR', IE: 'EUR', IT: 'EUR', CH: 'CHF', CN: 'CNY', JP: 'JPY' };
+/** Fee currency for a school's country. Falls back to USD when the country is unknown. */
+export const currencyForCountry = (country: string | null | undefined): string => COUNTRY_CURRENCY[countryCode(country) ?? 'US'] ?? 'USD';
+
+// US state (2-letter, as in "Chicago, IL") to time zone. States not listed are Eastern.
+const US_STATE_TZ: Record<string, string> = {
+  AL: 'America/Chicago', AR: 'America/Chicago', IL: 'America/Chicago', IA: 'America/Chicago', KS: 'America/Chicago', LA: 'America/Chicago', MN: 'America/Chicago', MS: 'America/Chicago',
+  MO: 'America/Chicago', NE: 'America/Chicago', ND: 'America/Chicago', OK: 'America/Chicago', SD: 'America/Chicago', TN: 'America/Chicago', TX: 'America/Chicago', WI: 'America/Chicago',
+  CO: 'America/Denver', MT: 'America/Denver', NM: 'America/Denver', UT: 'America/Denver', WY: 'America/Denver', ID: 'America/Denver', AZ: 'America/Phoenix',
+  CA: 'America/Los_Angeles', NV: 'America/Los_Angeles', OR: 'America/Los_Angeles', WA: 'America/Los_Angeles', AK: 'America/Anchorage', HI: 'Pacific/Honolulu',
+};
+const CITY_TZ: [RegExp, string][] = [
+  [/melbourne|victoria\b|\bvic\b|geelong|monash|clayton/i, 'Australia/Melbourne'], [/brisbane|queensland|\bqld\b|gold coast/i, 'Australia/Brisbane'],
+  [/perth|western australia|\bwa\b/i, 'Australia/Perth'], [/adelaide|south australia|\bsa\b/i, 'Australia/Adelaide'], [/hobart|tasmania|\btas\b/i, 'Australia/Hobart'],
+  [/vancouver|british columbia|\bbc\b|victoria/i, 'America/Vancouver'], [/calgary|edmonton|alberta|\bab\b/i, 'America/Edmonton'], [/winnipeg|manitoba/i, 'America/Winnipeg'],
+  [/halifax|nova scotia/i, 'America/Halifax'],
+];
+const COUNTRY_TZ: Partial<Record<CountryCode, string>> = {
+  US: 'America/New_York', UK: 'Europe/London', CA: 'America/Toronto', AU: 'Australia/Sydney', SG: 'Asia/Singapore', HK: 'Asia/Hong_Kong', FR: 'Europe/Paris',
+  ES: 'Europe/Madrid', CH: 'Europe/Zurich', CN: 'Asia/Shanghai', NZ: 'Pacific/Auckland', DE: 'Europe/Paris', NL: 'Europe/Paris', IE: 'Europe/London', IT: 'Europe/Paris', JP: 'Asia/Tokyo',
+};
+/** Deadline time zone from the school's country and city (location like "Chicago, IL" or "Melbourne"). Only returns zones in TIMEZONES. */
+export function timezoneForSchool(country: string | null | undefined, location?: string | null): string {
+  const code = countryCode(country);
+  const loc = (location ?? '').trim();
+  let tz: string | undefined;
+  if (code === 'US') {
+    const st = /,\s*([A-Z]{2})\b/.exec(loc)?.[1];
+    tz = (st && US_STATE_TZ[st]) || COUNTRY_TZ.US;
+  } else if (code === 'AU' || code === 'CA') {
+    // Victoria is both an Australian state and a Canadian city, so only test the patterns for the right country
+    const hit = CITY_TZ.find(([re, z]) => re.test(loc) && z.startsWith(code === 'AU' ? 'Australia/' : 'America/'));
+    tz = hit?.[1] ?? COUNTRY_TZ[code];
+  } else if (code) tz = COUNTRY_TZ[code];
+  return tz && TIMEZONES.includes(tz) ? tz : 'America/New_York';
+}
+
+export const UNDERGRAD_PROGRAM = 'Undergraduate (first-year)';
+const GRAD_PROGRAM_DEFAULT: Record<string, string> = { mba: 'MBA', masters: "Master's", phd: 'PhD' };
+/**
+ * Program to prefill: the school's own program when it lists exactly one (or one that fits the track), else a track default.
+ * Never "Full-time MBA" unless the school itself lists it.
+ */
+export function defaultProgram(track: AppTrack, schoolPrograms: string[], gradProgram?: string | null): string {
+  const names = schoolPrograms.map((p) => p.trim()).filter(Boolean);
+  const isUg = (n: string) => /bachelor|undergrad|\bb\.?(a|sc|s|com|eng)\b|first[- ]year|freshman/i.test(n);
+  const fits = names.filter((n) => (track === 'undergrad' ? isUg(n) : !isUg(n)));
+  if (fits.length) return fits[0].slice(0, 120);
+  if (track === 'undergrad') return UNDERGRAD_PROGRAM;
+  return GRAD_PROGRAM_DEFAULT[gradProgram ?? ''] ?? '';
+}
+
+/** Intakes a student can choose for a school's country. Australia (and New Zealand) use semesters; elsewhere Fall and Spring. Skips starts under 3 months away. */
+export function intakeOptions(country: string | null | undefined, today: Date = new Date(), count = 4): string[] {
+  const code = countryCode(country);
+  const terms: [string, number][] = code === 'AU' || code === 'NZ' ? [['Semester 1 {y} (Feb)', 1], ['Semester 2 {y} (Jul)', 6]] : [['Spring {y}', 0], ['Fall {y}', 8]];
+  const minStart = new Date(today.getFullYear(), today.getMonth() + 3, 1);
+  const out: string[] = [];
+  for (let y = today.getFullYear(); out.length < count && y < today.getFullYear() + 6; y++)
+    for (const [label, month] of terms) if (out.length < count && new Date(y, month, 1) >= minStart) out.push(label.replace('{y}', String(y)));
+  return out;
+}
+const intakeStart = (label: string): Date | null => {
+  const y = Number(/(\d{4})/.exec(label)?.[1]);
+  if (!y) return null;
+  const m = /fall|autumn|sept?/i.test(label) ? 8 : /spring|jan/i.test(label) ? 0 : /semester 2|jul/i.test(label) ? 6 : /semester 1|feb/i.test(label) ? 1 : /summer/i.test(label) ? 5 : null;
+  return m == null ? null : new Date(y, m, 1);
+};
+/**
+ * Default intake for a school: the student's onboarding intake translated to the school's calendar.
+ * For Australia "Fall 2027" becomes the first semester that starts on or after it ("Semester 1 2028 (Feb)").
+ */
+export function defaultIntake(country: string | null | undefined, wanted: string | null | undefined, today: Date = new Date()): string {
+  const opts = intakeOptions(country, today, 8);
+  const target = wanted ? intakeStart(wanted) : null;
+  if (wanted && opts.includes(wanted)) return wanted;
+  if (target) { const hit = opts.find((o) => (intakeStart(o)?.getTime() ?? 0) >= target.getTime()); if (hit) return hit; }
+  return opts[0] ?? wanted ?? '';
+}
+
+/** Undergrad application plans by country, stored in the round column. Empty list means "do not ask". */
+export function applicationPlans(country: string | null | undefined): string[] {
+  switch (countryCode(country)) {
+    case 'US': return ['Early Decision', 'Early Decision II', 'Early Action', 'Restrictive Early Action', 'Regular Decision'];
+    case 'UK': return ['UCAS main (January)', 'UCAS early (October, Oxford, Cambridge, medicine)'];
+    case 'CA': return ['Early', 'Regular'];
+    default: return [];
+  }
+}
 
 /* ------------------------------------------------------------------ time zones */
 export function tzOffsetMinutes(utc: Date, tz: string): number {
@@ -287,6 +395,8 @@ export type EssayLite = { id?: string; title: string; draft: string; word_limit:
 export function essayWordStates(essays: EssayLite[]) {
   return essays.map((e) => { const words = countWords(e.draft); return { ...e, words, over: e.word_limit != null && words > e.word_limit, empty: words === 0 }; });
 }
+/** Default test items in the grad and undergrad templates (migration 026). */
+export const TEST_REQ_NAMES = ['GMAT/GRE', 'English test (IELTS/TOEFL/Duolingo)'];
 export function buildChecklist(i: {
   confirmations: Record<string, boolean> | null; essays: EssayLite[]; requirements: (Req & { document_id?: string | null })[]; hasTestScores: boolean; recommendations: { status: string }[]; feePaidExpense: boolean;
 }): ChecklistItem[] {
@@ -306,10 +416,10 @@ export function buildChecklist(i: {
   }
   const resume = req((r) => r.category === 'resume');
   items.push({ id: 'resume', label: 'Resume attached', ...(resume.length ? (resume.some((r) => r.document_id || r.status === 'complete') ? { auto: 'pass' as const, detail: 'The resume requirement has a document or is complete.' } : { auto: 'fail' as const, detail: 'Attach a document to the Resume requirement or mark it complete.' }) : { auto: 'unknown' as const, detail: 'No resume requirement found.' }), canOverride: true });
-  const tr = req((r) => r.name === 'Academic transcripts');
+  const tr = req((r) => r.name === 'Academic transcripts' || r.name.startsWith('School transcripts'));
   items.push({ id: 'transcripts', label: 'Transcripts attached', ...(tr.length ? (tr.some((r) => r.document_id || doneReq(r)) ? { auto: 'pass' as const, detail: 'The transcripts requirement has a document or is complete.' } : { auto: 'fail' as const, detail: 'Attach a document to the transcripts requirement or mark it complete.' }) : { auto: 'unknown' as const, detail: 'No transcripts requirement found.' }), canOverride: true });
-  const testReq = req((r) => r.name === 'GMAT/GRE').some(doneReq);
-  items.push({ id: 'test_scores', label: 'Test scores entered', auto: i.hasTestScores || testReq ? 'pass' : 'fail', detail: i.hasTestScores ? 'At least one test score is saved in your profile.' : testReq ? 'The GMAT/GRE requirement is complete.' : 'No test score saved in your profile.', canOverride: true });
+  const testReq = req((r) => TEST_REQ_NAMES.includes(r.name)).some(doneReq);
+  items.push({ id: 'test_scores', label: 'Test scores entered', auto: i.hasTestScores || testReq ? 'pass' : 'fail', detail: i.hasTestScores ? 'At least one test score is saved in your profile.' : testReq ? 'The test requirement is complete.' : 'No test score saved in your profile.', canOverride: true });
   const recs = i.recommendations;
   if (!recs.length) items.push({ id: 'recommendations', label: 'Recommendations submitted', auto: 'unknown', detail: 'No recommendations are tracked for this application.', canOverride: true });
   else { const n = recs.filter((r) => r.status === 'submitted').length; items.push({ id: 'recommendations', label: 'Recommendations submitted', auto: n === recs.length ? 'pass' : 'fail', detail: `${n} of ${recs.length} submitted.`, canOverride: true }); }

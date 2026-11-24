@@ -7,7 +7,7 @@ const Body = z.object({ system: z.string().max(8000), prompt: z.string().min(1).
 export async function POST(req: Request) {
   const { user } = await requireUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!aiConfigured()) return NextResponse.json({ error: 'not_configured', message: 'ANTHROPIC_API_KEY is not set. Add it to .env.local to enable AI features.' }, { status: 503 });
+  if (!aiConfigured()) return NextResponse.json({ error: 'not_configured', message: 'AI feedback is coming soon.' }, { status: 503 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_request', details: parsed.error.flatten() }, { status: 400 });
   try {

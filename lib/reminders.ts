@@ -13,11 +13,27 @@
 //   buildReminderFacts                  turn raw rows into small facts in the user's own time zone
 //   decideReminder                      the pure decision: which kind (or none) and why
 //   composeReminder                     the email itself, with copy picked deterministically from user id + date
-import { governingDeadline, isActiveApp, isSubmitted, reqDone } from './overview-logic.ts';
+import { governingDeadline, isActiveApp, isSubmitted } from './overview-logic.ts';
+import { checklistProgress } from './results.ts';
 import { EMAIL_STICKER_ALT, emailStickerFor } from './art.ts';
 import { parseOnboarding, DEFAULT_REMINDER_HOUR, DEFAULT_TIMEZONE, type Onboarding } from './onboarding.ts';
 
 export const PRODUCT_NAME = 'Campus Quest';
+
+// ---------------------------------------------------------------------------------------------------------------
+// The one promise about email. Settings and Notifications show exactly these lines, so the app never disagrees with itself.
+export const EMAIL_PROMISE = "We send a short email only when it helps: a deadline is a week away, a result is due, or you've been away for a couple of days. Never daily.";
+/** Shown instead of the toggle's promise when the server has no email service connected yet. */
+export const EMAIL_NOT_CONNECTED = 'Email reminders will start once the app owner connects an email service.';
+
+/** First name for the greeting: the first word of the preferred name, else of the full name, else null. */
+export function firstName(...names: (string | null | undefined)[]): string | null {
+  for (const n of names) {
+    const w = typeof n === 'string' ? n.trim().split(/\s+/)[0] : '';
+    if (w) return w;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Preferences
@@ -37,6 +53,13 @@ export function readReminderPrefs(settings: unknown): ReminderPrefs {
     intake: o.intake ?? null,
     track: o.track,
   };
+}
+
+/** Returns the settings object with onboarding.timezone set, keeping every other key. */
+export function withTimezonePatch(settings: Record<string, unknown> | null | undefined, timezone: string): Record<string, unknown> {
+  const s = settings ?? {};
+  const ob = s.onboarding && typeof s.onboarding === 'object' && !Array.isArray(s.onboarding) ? (s.onboarding as Record<string, unknown>) : {};
+  return { ...s, onboarding: { ...ob, timezone: safeTimeZone(timezone) } };
 }
 
 /** Returns the settings object with onboarding.reminders patched, keeping every other key. */
@@ -145,8 +168,8 @@ export type FactApp = {
   deadlineOn: string | null;      // local date of the governing deadline
   resultOn: string | null;        // expected result date (calendar date)
   submittedOn: string | null;     // local date it was submitted
-  total: number; ready: number;   // mandatory checklist items (the "Submission confirmation" item is not counted)
-  remaining: OpenItem[];          // mandatory items still open, started ones first
+  total: number; ready: number;   // checklist items, counted exactly like the Applications page (lib/results.ts checklistProgress)
+  remaining: OpenItem[];          // items still open, in the Applications page order (required first), started ones first
   readyOn: (string | null)[];     // local completion date of each ready item (null when unknown)
 };
 export type ReminderFacts = { userId: string; name: string | null; today: string; apps: FactApp[]; lastActiveOn: string | null; history: LogEntry[] };
@@ -156,7 +179,7 @@ export type ReminderRows = {
   schools: { id: string; name: string; short_name: string | null }[];
   applications: { id: string; school_id: string; stage: string; round: string | null; submission_confirmed_at: string | null; submitted_at: string | null; program_requirement_id?: string | null; expected_result_on?: string | null }[];
   deadlines: { id: string; application_id: string; name: string; due_at: string; timezone: string; kind: string; is_primary: boolean }[];
-  requirements: { id: string; application_id: string; name: string; category: string; status: string; mandatory: boolean; completed_at?: string | null; updated_at?: string | null }[];
+  requirements: { id: string; application_id: string; name: string; category: string; status: string; mandatory: boolean; sort_order?: number | null; completed_at?: string | null; updated_at?: string | null }[];
   decisions: { application_id: string; decision: string }[];
   /** program_requirements.decision_dates by program_requirement_id. */
   decisionDates: Record<string, unknown>;
@@ -167,7 +190,6 @@ export type ReminderRows = {
 export type FactsMeta = { userId: string; name?: string | null; timezone: string };
 
 const FINAL_DECISIONS = ['admitted', 'rejected', 'withdrawn'];
-const NOT_COUNTED = 'Submission confirmation';
 
 export function buildReminderFacts(rows: ReminderRows, meta: FactsMeta, now: Date): ReminderFacts {
   const tz = safeTimeZone(meta.timezone);
@@ -176,9 +198,10 @@ export function buildReminderFacts(rows: ReminderRows, meta: FactsMeta, now: Dat
   const decided = new Set(rows.decisions.filter((d) => FINAL_DECISIONS.includes(d.decision)).map((d) => d.application_id));
 
   const apps: FactApp[] = rows.applications.map((a) => {
-    const mandatory = rows.requirements.filter((r) => r.application_id === a.id && r.mandatory && r.name !== NOT_COUNTED);
-    const done = mandatory.filter(reqDone);
-    const open = mandatory.filter((r) => !reqDone(r));
+    // Same counting as the Applications page, so "4 of 12 ready" in an email matches what the student sees in the app.
+    const progress = checklistProgress(rows.requirements.filter((r) => r.application_id === a.id).map((r) => ({ ...r, sort_order: r.sort_order ?? 0 })));
+    const done = progress.done;
+    const open = progress.todo;
     const remaining = [...open.filter((r) => r.status === 'in_progress'), ...open.filter((r) => r.status !== 'in_progress')].map((r) => ({ name: r.name, category: r.category, status: r.status }));
     const dl = governingDeadline(rows.deadlines, a.id, now);
     const state: FactApp['state'] = decided.has(a.id) ? 'closed' : isActiveApp(a) ? 'active' : isSubmitted(a) && !FINAL_DECISIONS.includes(a.stage) ? 'submitted' : 'closed';
@@ -187,7 +210,7 @@ export function buildReminderFacts(rows: ReminderRows, meta: FactsMeta, now: Dat
       deadlineOn: dl ? localDateOf(dl.due_at, tz) : null,
       resultOn: expectedResultOn(a, a.program_requirement_id ? rows.decisionDates[a.program_requirement_id] : undefined),
       submittedOn: localDateOf(a.submission_confirmed_at ?? a.submitted_at, tz),
-      total: mandatory.length, ready: done.length, remaining,
+      total: progress.total, ready: done.length, remaining,
       readyOn: done.map((r) => localDateOf(r.completed_at, tz)),
     };
   });
@@ -441,7 +464,14 @@ const MILESTONE_COPY: Record<Milestone, { headline: (s: string) => string; done:
 };
 
 type Parts = { subject: string; preheader: string; opening: string; lead?: string; list?: string[]; listNote?: string; highlight?: string; button: { label: string; href: string }; after: string[] };
-const progressText = (a: FactApp | null, ready = a?.ready ?? 0) => (a && a.total > 0 ? `${ready} of ${a.total} ready` : null);
+/** "4 of 12 ready", or null when there is nothing to count or nothing is ready yet (we never cheer about zero). */
+const progressText = (a: FactApp | null, ready = a?.ready ?? 0) => (a && a.total > 0 && ready > 0 ? `${ready} of ${a.total} ready` : null);
+/** Openings for a check-in when nothing is ready yet. Kind, and never "the good news: 0 of N". */
+export const ZERO_PROGRESS_OPENINGS: readonly ((school: string | null) => string)[] = [
+  () => "You haven't started yet, and that's okay. Here's an easy first step.",
+  (s) => (s ? `You haven't started on ${s} yet, and that's okay. Here's an easy first step.` : "You haven't started yet, and that's okay. Here's an easy first step."),
+  () => "Nothing is ticked off yet, and that's completely fine. Everyone starts at zero. Here's an easy first step.",
+];
 export const MAX_LISTED = 4;
 
 function partsFor(d: Exclude<Decision, { kind: null }>, seed: string): Parts {
@@ -478,8 +508,11 @@ function partsFor(d: Exclude<Decision, { kind: null }>, seed: string): Parts {
         button: { label: `Open ${PRODUCT_NAME}`, href: d.app ? appHref(d.app.id) : '/' },
         after: ['This is our last email until you come back. Whenever you are ready, we will be here.'],
       };
+      const zero = !d.app || d.app.ready === 0;
+      const base = sub(TEMPLATES.nudge, c);
       return {
-        ...sub(TEMPLATES.nudge, c),
+        ...base,
+        ...(zero ? { opening: pick(ZERO_PROGRESS_OPENINGS, seed, 'opening')(c.school) } : {}),
         preheader: 'One tiny step, about 2 minutes.',
         lead: 'If you have 2 minutes, here is one tiny step:',
         highlight: d.step.text,
@@ -502,7 +535,8 @@ const join = (base: string, path: string) => `${base.replace(/\/+$/, '')}${path.
 export function composeReminder(d: Decision, f: Pick<ReminderFacts, 'name' | 'userId' | 'today'>, o: ComposeOptions): ReminderEmail | null {
   if (d.kind === null) return null;
   const x = partsFor(d, o.seed ?? `${f.userId}:${f.today}`);
-  const hi = f.name ? `Hi ${f.name},` : 'Hi there,';
+  const first = firstName(f.name);
+  const hi = first ? `Hi ${first},` : 'Hi there,';
   const url = join(o.appUrl, x.button.href);
   const settingsUrl = join(o.appUrl, '/settings');
   const footer = d.kind === 'nudge' && d.final ? `You get this because email reminders are on in ${PRODUCT_NAME}. We will not write again until you are back.` : `You get this because email reminders are on in ${PRODUCT_NAME}.`;
