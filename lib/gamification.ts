@@ -1,6 +1,7 @@
 // Pure gamification logic. Every number here is derived from real xp_events rows (written only by database triggers on
 // real records, see supabase/migrations/018_gamification.sql). Nothing in this file creates XP.
 import { z } from 'zod';
+import { badgeArtSrc } from './art.ts';
 
 export type XpEvent = { kind: string; points: number; occurred_at: string };
 
@@ -172,7 +173,8 @@ export function weeklySummary(events: XpEvent[], now: Date, tz: string): WeeklyS
 // ---------------------------------------------------------------------------------------------------------------
 // Badges. Derived from events only. unlocked_at is the time of the event that completed the requirement.
 export type BadgeColor = 'green' | 'blue' | 'orange' | 'pink' | 'yellow' | 'purple';
-export type Badge = { id: string; title: string; description: string; color: BadgeColor; icon: string; target: number; current: number; unlocked: boolean; unlockedAt: string | null; hint: string };
+/** art: ribbon picture in public/art/badge, or null when the badge keeps its lucide icon. */
+export type Badge = { id: string; title: string; description: string; color: BadgeColor; icon: string; art: string | null; target: number; current: number; unlocked: boolean; unlockedAt: string | null; hint: string };
 type BadgeDef = { id: string; title: string; description: string; color: BadgeColor; icon: string; target: number; hint: string; measure: (c: BadgeCtx) => number; unlockedAt: (c: BadgeCtx) => string | null };
 type BadgeCtx = { sorted: XpEvent[]; streak: Streak; dayFirst: Map<string, string>; days: string[] };
 
@@ -198,7 +200,7 @@ const BADGES: BadgeDef[] = [
   { id: 'streak-30', title: '30 Day Streak', description: 'Made real progress 30 days in a row.', color: 'pink', icon: 'Flame', target: 30, hint: 'A month of steady steps.', measure: (c) => c.streak.longest, unlockedAt: (c) => streakReached(c, 30) },
   { id: 'back-up-crew', title: 'Back-up Crew', description: 'A recommender submitted a recommendation.', color: 'purple', icon: 'Users', target: 1, hint: 'Mark a recommendation as submitted once it really is.', measure: (c) => Math.min(1, cnt(c, ['recommendation_submitted'])), unlockedAt: (c) => firstOf(c, 'recommendation_submitted') },
   { id: 'submitted', title: 'Submitted!', description: 'Submitted an application.', color: 'green', icon: 'Send', target: 1, hint: 'Confirm and submit your first application.', measure: (c) => Math.min(1, cnt(c, ['application_submitted'])), unlockedAt: (c) => firstOf(c, 'application_submitted') },
-  { id: 'interview-ready', title: 'Interview Ready', description: 'Completed an interview session.', color: 'blue', icon: 'Mic', target: 1, hint: 'Finish a mock interview session.', measure: (c) => Math.min(1, cnt(c, ['interview_completed'])), unlockedAt: (c) => firstOf(c, 'interview_completed') },
+  // 'interview-ready' was retired with interview practice. Old interview_completed events still count as XP.
   { id: 'funding-push', title: 'Funding Push', description: 'Applied for a scholarship.', color: 'yellow', icon: 'Award', target: 1, hint: 'Mark a scholarship as applied once you have applied.', measure: (c) => Math.min(1, cnt(c, ['scholarship_applied'])), unlockedAt: (c) => firstOf(c, 'scholarship_applied') },
   { id: 'admitted', title: 'Admitted', description: 'Recorded an admission.', color: 'purple', icon: 'PartyPopper', target: 1, hint: 'Shown only when you record an admitted decision.', measure: (c) => Math.min(1, cnt(c, ['decision_admitted'])), unlockedAt: (c) => firstOf(c, 'decision_admitted') },
 ];
@@ -212,7 +214,7 @@ export function computeBadges(events: XpEvent[], now: Date, tz: string): Badge[]
   const ctx: BadgeCtx = { sorted, streak: streakFromDays(days, dayKey(now, tz)), dayFirst, days };
   return BADGES.map((b) => {
     const current = Math.min(b.measure(ctx), b.target), at = current >= b.target ? b.unlockedAt(ctx) : null;
-    return { id: b.id, title: b.title, description: b.description, color: b.color, icon: b.icon, target: b.target, current, unlocked: current >= b.target && at !== null, unlockedAt: at, hint: b.hint };
+    return { id: b.id, title: b.title, description: b.description, color: b.color, icon: b.icon, art: badgeArtSrc(b.id), target: b.target, current, unlocked: current >= b.target && at !== null, unlockedAt: at, hint: b.hint };
   });
 }
 /** Up to n locked badges, closest to unlocking first. */

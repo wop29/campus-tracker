@@ -1,46 +1,44 @@
-// Generates the PWA icons (PNG, no dependencies): public/icons/icon-192.png, icon-512.png, maskable-512.png, apple-touch-icon.png.
-// Usage: node scripts/make-icons.mjs   (re-run if you change the colors below; the PNGs are committed)
-import { deflateSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
+// Generates the app icons from Mochi's app icon art (public/art/empty/app-icon.webp) with sharp (installed with Next.js):
+//   public/icons/icon-192.png, icon-512.png       rounded tile on transparent, purpose "any"
+//   public/icons/maskable-512.png                 full bleed on #58C23A, art inside the 80% safe circle, purpose "maskable"
+//   public/icons/apple-touch-icon.png (180)       full bleed on #58C23A (iOS rounds the corners itself)
+//   app/icon.png (64)                             favicon
+// Usage: node scripts/make-icons.mjs   (re-run if the art changes; the PNGs are committed)
+import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import sharp from 'sharp';
 
-const BG = [0x1a, 0x64, 0xb0], FG = [0xff, 0xf8, 0xe7];   // keep in sync with public/manifest.webmanifest
-const out = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'icons');
+const BG = '#58C23A';   // keep in sync with public/manifest.webmanifest (background_color) and the tile color of the art
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SRC = path.join(root, 'public', 'art', 'empty', 'app-icon.webp');
+const out = path.join(root, 'public', 'icons');
 mkdirSync(out, { recursive: true });
 
-const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
-const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
-const chunk = (type, data) => { const t = Buffer.from(type), len = Buffer.alloc(4), c = Buffer.alloc(4); len.writeUInt32BE(data.length); c.writeUInt32BE(crc(Buffer.concat([t, data]))); return Buffer.concat([len, t, data, c]); };
-function png(size, pixel) {
-  const raw = Buffer.alloc(size * (size * 4 + 1));
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
-    for (let x = 0; x < size; x++) { const p = pixel(x, y); raw.set(p, y * (size * 4 + 1) + 1 + x * 4); }
-  }
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 6;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+// The art is a rounded green tile with a soft light rim and a little transparent margin. Trim the margin,
+// and for the full bleed versions also shave the rim so the tile melts into the background.
+const tile = await sharp(SRC).trim({ threshold: 1 }).toBuffer();
+const { width: tw = 512 } = await sharp(tile).metadata();
+const { height: th = 512 } = await sharp(tile).metadata();
+// Cut a rounded rectangle just inside the tile's rim (corner radius of the art is about a quarter of its width).
+const inset = Math.round(tw * 0.035), radius = Math.round(tw * 0.22);
+const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${tw}" height="${th}"><rect x="${inset}" y="${inset}" width="${tw - 2 * inset}" height="${th - 2 * inset}" rx="${radius}" ry="${radius}" fill="#fff"/></svg>`);
+const core = await sharp(tile).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+
+const plain = (size) => sharp(tile).resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png({ compressionLevel: 9, palette: true, quality: 92 });
+async function bleed(size, scale) {
+  const inner = Math.round(size * scale);
+  const art = await sharp(core).resize(inner, inner, { fit: 'fill' }).toBuffer();
+  return sharp({ create: { width: size, height: size, channels: 4, background: BG } })
+    .composite([{ input: art, left: Math.round((size - inner) / 2), top: Math.round((size - inner) / 2) }])
+    .flatten({ background: BG }).png({ compressionLevel: 9, palette: true, quality: 92 });
 }
-const inPoly = (poly, x, y) => { let r = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) r = !r; } return r; };
-// A mortarboard in unit coordinates
-const CAP = [[[0.5, 0.26], [0.82, 0.42], [0.5, 0.58], [0.18, 0.42]], [[0.3, 0.52], [0.5, 0.62], [0.7, 0.52], [0.7, 0.68], [0.5, 0.78], [0.3, 0.68]]];
-const SS = 3;
-function icon(size, { maskable, rounded }) {
-  const scale = maskable ? 0.78 : 1;                    // maskable icons keep the glyph inside the central safe zone
-  const r = rounded ? 0.22 : 0;
-  return png(size, (px, py) => {
-    let fg = 0, inside = 0;
-    for (let sy = 0; sy < SS; sy++) for (let sx = 0; sx < SS; sx++) {
-      const x = (px + (sx + 0.5) / SS) / size, y = (py + (sy + 0.5) / SS) / size;
-      const dx = Math.max(Math.abs(x - 0.5) - (0.5 - r), 0), dy = Math.max(Math.abs(y - 0.5) - (0.5 - r), 0);
-      if (dx * dx + dy * dy <= r * r) { inside++; const ux = (x - 0.5) / scale + 0.5, uy = (y - 0.5) / scale + 0.5; if (CAP.some((p) => inPoly(p, ux, uy))) fg++; }
-    }
-    const n = SS * SS, a = inside / n, f = inside ? fg / inside : 0;
-    return [0, 1, 2].map((i) => Math.round(BG[i] * (1 - f) + FG[i] * f)).concat([Math.round(255 * a)]);
-  });
-}
-const files = {
-  'icon-192.png': icon(192, { rounded: true }), 'icon-512.png': icon(512, { rounded: true }),
-  'maskable-512.png': icon(512, { maskable: true }), 'apple-touch-icon.png': icon(180, { maskable: true }),
-};
-for (const [name, buf] of Object.entries(files)) { writeFileSync(path.join(out, name), buf); console.log('wrote', name, buf.length, 'bytes'); }
+
+const files = [
+  [path.join(out, 'icon-192.png'), plain(192)],
+  [path.join(out, 'icon-512.png'), plain(512)],
+  [path.join(out, 'maskable-512.png'), await bleed(512, 0.78)],   // Mochi stays inside the 80% safe circle
+  [path.join(out, 'apple-touch-icon.png'), await bleed(180, 0.96)],
+  [path.join(root, 'app', 'icon.png'), plain(64)],
+];
+for (const [file, img] of files) { const info = await img.toFile(file); console.log('wrote', path.relative(root, file), `${info.width}x${info.height}`, info.size, 'bytes'); }

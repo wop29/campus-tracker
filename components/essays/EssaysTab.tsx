@@ -47,7 +47,7 @@ export function EssaysTab() {
       </div>
       {refErr && <ErrorBox message={`Could not load schools or applications: ${refErr}`} />}
       {loading ? <Loading /> : error ? <ErrorBox message={error} onRetry={reload} /> : !data?.length ? (
-        <EmptyState title="No essays yet" hint="Create an essay for a school, paste the prompt, and start drafting. Every save is kept as a version." action={<Button onClick={() => setCreating(true)}>New essay</Button>} />
+        <EmptyState art="no-essays" title="No essays yet" hint="Create an essay for a school, paste the prompt, and start drafting. Every save is kept as a version." action={<Button onClick={() => setCreating(true)}>New essay</Button>} />
       ) : !rows.length ? <EmptyState title="No essays match these filters" /> : (
         <div className="overflow-x-auto rounded-lg border bg-surface">
           <table className="w-full text-sm">

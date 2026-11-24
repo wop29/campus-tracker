@@ -43,7 +43,7 @@ export function Sidebar() {
       {mobileOpen && <div className="fixed inset-0 z-40 bg-ink/50 md:hidden" onClick={() => setMobileOpen(false)} />}
       <aside className={cn('z-50 flex flex-col border-r-2 bg-surface text-ink transition-all', 'fixed inset-y-0 left-0 w-64 md:static', mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0', collapsed && 'md:w-20')}>
         <div className="flex h-16 items-center justify-between gap-2 px-3">
-          <div className="flex min-w-0 items-center gap-2"><Mascot mood="happy" size={collapsed ? 34 : 40} />{!collapsed && <span className="truncate text-base font-extrabold">{APP_NAME}</span>}</div>
+          <div className="flex min-w-0 items-center gap-2"><Mascot pose="happy" size={collapsed ? 34 : 40} decorative priority />{!collapsed && <span className="truncate text-base font-extrabold">{APP_NAME}</span>}</div>
           <button onClick={() => setCollapsed((c) => !c)} className="hidden rounded-xl p-1.5 text-secondary hover:bg-bg hover:text-ink md:block" aria-label="Collapse sidebar">{collapsed ? <Icons.ChevronsRight size={16} /> : <Icons.ChevronsLeft size={16} />}</button>
         </div>
         {nav}

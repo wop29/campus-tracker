@@ -201,7 +201,7 @@ export function ProgramsSection({ schoolId, schoolName, shortName }: { schoolId:
       {error && <ErrorBox message={error} onRetry={() => void load()} />}
       {!st && !error && <Loading label="Loading programs..." />}
       {st && st.ob.track === 'undergrad' && (
-        <EmptyState mascot="happy" title="Undergraduate programs are coming soon" hint="We are gathering what each school asks of undergraduate applicants. For now this list covers graduate programs only." />
+        <EmptyState pose="search" title="Undergraduate programs are coming soon" hint="We are gathering what each school asks of undergraduate applicants. For now this list covers graduate programs only." />
       )}
       {st && st.ob.track !== 'undergrad' && shown.length === 0 && (
         <EmptyState title="No programs here yet" hint={st.unavailable ? 'Program details are not available yet. Check back soon.' : 'We have not collected the programs for this school yet. Check back soon, or use the school\'s admissions page for now.'} />

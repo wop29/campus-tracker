@@ -14,6 +14,7 @@
 //   decideReminder                      the pure decision: which kind (or none) and why
 //   composeReminder                     the email itself, with copy picked deterministically from user id + date
 import { governingDeadline, isActiveApp, isSubmitted, reqDone } from './overview-logic.ts';
+import { EMAIL_STICKER_ALT, emailStickerFor } from './art.ts';
 import { parseOnboarding, DEFAULT_REMINDER_HOUR, DEFAULT_TIMEZONE, type Onboarding } from './onboarding.ts';
 
 export const PRODUCT_NAME = 'Campus Quest';
@@ -520,6 +521,9 @@ export function composeReminder(d: Decision, f: Pick<ReminderFacts, 'name' | 'us
     `Unsubscribe in one click: ${o.unsubscribeUrl}`,
   ].join('\n');
 
+  // Mochi sticker on top (html only). Absolute URL so mail clients can load it; 240px source shown at 120px for sharp screens.
+  const sticker = emailStickerFor(d.kind);
+  const stickerUrl = join(o.appUrl, `/art/email/${sticker}.png`);
   const p = 'margin:0 0 14px;font-size:16px;line-height:1.5;color:#3c3c3c;';
   const box = 'border:2px solid #e5e5e5;border-bottom-width:4px;border-radius:14px;padding:14px 16px;margin:0 0 16px;';
   const html = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>${esc(x.subject)}</title></head>
@@ -527,6 +531,7 @@ export function composeReminder(d: Decision, f: Pick<ReminderFacts, 'name' | 'us
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(x.preheader)}</div>
 <div style="max-width:480px;margin:0 auto;padding:24px 16px;">
 <div style="background:#ffffff;border:2px solid #e5e5e5;border-radius:16px;padding:24px 20px;">
+<div style="text-align:center;margin:0 0 12px;"><img src="${esc(stickerUrl)}" width="120" height="120" alt="${esc(EMAIL_STICKER_ALT[sticker])}" style="display:inline-block;width:120px;height:120px;border:0;outline:none;text-decoration:none;"></div>
 <p style="${p}">${esc(hi)}</p>
 <p style="${p}">${esc(x.opening)}</p>
 ${x.lead ? `<p style="${p}">${esc(x.lead)}</p>` : ''}

@@ -42,13 +42,15 @@ export default function JourneyPage() {
   if (g.error) return <ErrorBox message={g.error} onRetry={() => void g.reload()} />;
   const current = journey.units.flatMap((u) => u.lessons).find((l) => l.state === 'current');
   const currentUnit = journey.units.find((u) => u.id === journey.currentUnitId);
-  const mood = g.celebration ? 'cheer' : g.streak.atRisk ? 'think' : 'happy';
+  // Mochi: party for fresh wins, a thinking face when the streak needs a step, a quiet read otherwise.
+  const headerPose = g.celebration ? 'party' : g.streak.atRisk ? 'thinking' : !journey.currentLessonId ? 'cheer' : 'reading';
+  const pathPose = g.celebration ? 'cheer' : g.streak.atRisk ? 'thinking' : 'checklist';
   return (
     <div>
       <Confetti fire={g.fire} intense={g.celebration?.intensity === 'big'} />
       <header className="mb-6 rounded-3xl border bg-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-4">
-          <Mascot mood={mood} size={88} />
+          <Mascot pose={headerPose} size={88} priority />
           <div className="min-w-[200px] flex-1">
             <h1 className="text-2xl font-extrabold">Your journey</h1>
             <p className="text-sm text-secondary">
@@ -98,7 +100,7 @@ export default function JourneyPage() {
         <section aria-label="Your path">
           <H>Your path</H>
           <p className="mb-4 text-xs text-secondary">Nothing is locked. Tap a part to see its steps, and work in any order you like.</p>
-          <JourneyPath key={`${journey.profile.track}-${journey.profile.stage}-${journey.currentUnitId}`} journey={journey} mood={mood} />
+          <JourneyPath key={`${journey.profile.track}-${journey.profile.stage}-${journey.currentUnitId}`} journey={journey} pose={pathPose} />
         </section>
         <aside className="space-y-6 lg:sticky lg:top-4 lg:self-start">
           <Card className="rounded-2xl"><QuestsCard board={g.quests} /></Card>

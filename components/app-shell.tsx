@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const onWelcome = pathname === WELCOME;
   if (!configured) {
     return (
-      <div className="mx-auto max-w-xl p-10"><ThemeLoader fromDb={false} /><Mascot mood="think" size={96} /><h1 className="text-2xl font-extrabold">Setup required</h1>
+      <div className="mx-auto max-w-xl p-10"><ThemeLoader fromDb={false} /><Mascot pose="thinking" size={96} priority /><h1 className="text-2xl font-extrabold">Setup required</h1>
         <p className="mt-2 text-sm text-secondary">Supabase is not configured. Copy <code>.env.example</code> to <code>.env.local</code>, set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, run the SQL in <code>supabase/migrations</code>, then restart. See README.md.</p></div>
     );
   }

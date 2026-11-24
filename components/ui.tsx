@@ -2,7 +2,9 @@
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
-import { Mascot, type MascotMood } from '@/components/mascot';
+import { Mascot, type MascotMood, type MascotPose } from '@/components/mascot';
+import { ArtImg } from '@/components/art';
+import { EMPTY_ART, type EmptyArt } from '@/lib/art';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 /** Chunky "3D" button: the thick bottom border shrinks and the button drops 2px while pressed. */
@@ -61,9 +63,12 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
     </div>
   );
 }
-export const EmptyState = ({ title, hint, action, mascot }: { title: string; hint?: string; action?: ReactNode; mascot?: boolean | MascotMood }) => (
+/** Dashed empty box. `art` shows a full illustration, `pose` an illustrated Mochi, `mascot` the old SVG drawing. */
+export const EmptyState = ({ title, hint, action, mascot, pose, art }: { title: string; hint?: string; action?: ReactNode; mascot?: boolean | MascotMood; pose?: MascotPose; art?: EmptyArt }) => (
   <div className="rounded-2xl border-2 border-dashed bg-surface p-8 text-center">
-    {mascot && <div className="mb-2 flex justify-center"><Mascot mood={mascot === true ? 'happy' : mascot} size={88} /></div>}
+    {art ? <div className="mb-3 flex justify-center"><ArtImg src={EMPTY_ART[art].src} alt={EMPTY_ART[art].alt} size={140} priority /></div>
+      : pose ? <div className="mb-2 flex justify-center"><Mascot pose={pose} size={104} priority /></div>
+      : mascot && <div className="mb-2 flex justify-center"><Mascot mood={mascot === true ? 'happy' : mascot} size={88} /></div>}
     <p className="font-bold text-ink">{title}</p>{hint && <p className="mt-1 text-sm text-secondary">{hint}</p>}{action && <div className="mt-3">{action}</div>}
   </div>
 );

@@ -90,7 +90,7 @@ test('weekly summary buckets by day and ranks kinds', () => {
 });
 
 test('badges: none unlocked on empty account and hints exist', () => {
-  const b = computeBadges([], NOW, 'UTC'); assert.ok(b.length >= 12 && b.every((x) => !x.unlocked && x.unlockedAt === null && x.current === 0));
+  const b = computeBadges([], NOW, 'UTC'); assert.ok(b.length >= 11 && !b.some((x) => x.id === 'interview-ready') && b.every((x) => !x.unlocked && x.unlockedAt === null && x.current === 0));
   assert.equal(nextBadges(b).length, 3);
 });
 test('badges: unlocked_at is the time of the qualifying event', () => {

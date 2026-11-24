@@ -16,7 +16,7 @@ export function OverviewStrip() {
   return (
     <section aria-label="Today's quests and streak" className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border bg-surface p-4">
       <Confetti fire={g.fire} intense={g.celebration?.intensity === 'big'} />
-      <Mascot mood={g.celebration ? 'cheer' : g.streak.atRisk ? 'think' : 'happy'} size={64} />
+      <Mascot pose={g.celebration ? 'cheer' : g.streak.atRisk ? 'thinking' : empty ? 'wave' : 'happy'} size={64} priority />
       <div className="min-w-[180px] flex-1">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-extrabold">
           <span className="inline-flex items-center gap-1"><Flame size={16} className={g.streak.current ? 'text-fun-orange-dark' : 'text-secondary'} aria-hidden />{g.streak.current} day streak</span>

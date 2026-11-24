@@ -6,6 +6,9 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { must } from '@/lib/hooks';
 import { Badge, Button, ConfirmButton, Field, Input, Modal, Select } from '@/components/ui';
 import { Confetti } from '@/components/confetti';
+import { ArtImg } from '@/components/art';
+import { Mascot, type MascotPose } from '@/components/mascot';
+import { EMPTY_ART, reqIconFor, reqIconSrc } from '@/lib/art';
 import { cn } from '@/lib/utils';
 import { isoToWall, stageForDecision, todayStr, wallToIso, type DecisionStatus, type Requirement } from '@/lib/applications';
 import {
@@ -101,11 +104,13 @@ function Row({ r, v, busy, onToggle, readOnly }: { r: Requirement; v: AppView; b
   const detail = shortDetail(r, essay);
   const status = todoStatus(r, essay);
   const action = reqAction(r, essay);
+  const icon = reqIconFor(r.name, r.category);
   return (
     <li className="flex flex-wrap items-center gap-3.5 px-4 py-3.5">
       {readOnly
         ? <span aria-hidden className={cn('flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border-2', done ? 'border-fun-green-dark bg-fun-green-dark text-white' : 'border-line bg-surface')}>{done && <Check size={16} strokeWidth={4} />}</span>
         : <Tick checked={done} disabled={busy} label={`${r.name}: ${done ? 'done, untick to reopen' : 'tick when done'}`} onChange={(next) => onToggle(r, next)} />}
+      {icon ? <ArtImg src={reqIconSrc(icon)} alt="" size={36} className={cn(done && 'opacity-60')} /> : <span aria-hidden className="w-9 shrink-0" />}
       <span className="flex min-w-[220px] flex-1 flex-col gap-0.5">
         <span className="flex flex-wrap items-center gap-2 text-base font-extrabold text-ink">{r.name}{!r.mandatory && <span className="rounded-full border-2 px-2 py-px text-[11px] font-extrabold uppercase tracking-wide text-secondary">Optional</span>}</span>
         {detail && <span className="text-sm text-secondary">{detail}</span>}
@@ -119,7 +124,7 @@ function Row({ r, v, busy, onToggle, readOnly }: { r: Requirement; v: AppView; b
 }
 
 /* ------------------------------------------------------------------ before submit */
-function PrepareView({ v, reload }: { v: AppView; reload: () => void }) {
+function PrepareView({ v, reload, onSubmitted }: { v: AppView; reload: () => void; onSubmitted: () => void }) {
   const { busy, run } = useAction();
   const [confirm, setConfirm] = useState(false);
   const p = v.progress;
@@ -135,18 +140,23 @@ function PrepareView({ v, reload }: { v: AppView; reload: () => void }) {
       await must(sb.from('admissions_decisions').upsert({ application_id: v.row.id, decision: 'awaiting' }, { onConflict: 'application_id', ignoreDuplicates: true }));
     }, 'Marked as submitted. Well done!');
     setConfirm(false);
-    if (ok) reload();
+    if (ok) { onSubmitted(); reload(); }
   }
   const left = p.todo.length;
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-black text-ink">What you still need</h2>
+        <h2 className="flex items-center gap-2 text-xl font-black text-ink">{left > 0 && <Mascot pose="checklist" size={44} decorative priority />}What you still need</h2>
         <span className="text-sm font-bold text-secondary">{readyText(p)}</span>
       </div>
       {left > 0
         ? <Group title={`Still to do · ${left}`}>{p.todo.map((r) => <Row key={r.id} r={r} v={v} busy={busy} onToggle={toggle} />)}</Group>
-        : <div className={cn(panel, 'border-fun-green-dark p-5 text-[15px] font-bold text-ink')}>{p.total ? 'Everything on your list is ticked off. Nice work!' : 'There is nothing on this checklist yet.'}</div>}
+        : p.total
+          ? <div className={cn(panel, 'flex flex-wrap items-center gap-4 border-fun-green-dark p-5')}>
+              <ArtImg src={EMPTY_ART['all-done'].src} alt={EMPTY_ART['all-done'].alt} size={112} priority />
+              <p className="min-w-[200px] flex-1 text-[15px] font-bold text-ink">Everything on your list is ticked off. Nice work! Mochi is taking a well earned break.</p>
+            </div>
+          : <div className={cn(panel, 'border-fun-green-dark p-5 text-[15px] font-bold text-ink')}>There is nothing on this checklist yet.</div>}
       {p.done.length > 0 && <Group title={`Done · ${p.done.length}`}>{p.done.map((r) => <Row key={r.id} r={r} v={v} busy={busy} onToggle={toggle} />)}</Group>}
       <div className={cn(panel, 'flex flex-wrap items-center justify-between gap-4 px-5 py-4')}>
         <p className="text-[15px] text-secondary">{left > 0 ? `Finish the ${left} item${left === 1 ? '' : 's'} above, then submit on the school site.` : 'Submit on the school site, then tell us here.'}</p>
@@ -215,12 +225,17 @@ function ResultCountdown({ v, reload }: { v: AppView; reload: () => void }) {
       <Button type="submit" variant="secondary" disabled={busy || own === (v.row.expected_result_on ?? '')}>Save date</Button>
     </form>
   );
+  const invited = isInterviewStage(v.row.stage);
+  const waitPose: MascotPose = invited ? 'interview' : 'reading';
   const source = r.sourceUrl && <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-primary underline">Source</a>;
 
   if (!r.date) {
     return (
       <section className={cn(panel, 'flex flex-col gap-3 border-fun-green-dark p-6')}>
-        <h2 className="text-[22px] font-black leading-tight text-ink">{r.needsRoundChoice ? 'Tell us your round to see the result date' : 'The school has not announced a result date'}</h2>
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-[22px] font-black leading-tight text-ink">{r.needsRoundChoice ? 'Tell us your round to see the result date' : 'The school has not announced a result date'}</h2>
+          <Mascot pose={waitPose} size={80} priority />
+        </div>
         <p className="text-[15px] text-secondary">{submittedOn ? `You submitted on ${submittedOn}. ` : ''}Nothing more to do for now.</p>
         {r.note && <p className="text-[15px] text-ink">{r.note} {source}</p>}
         {roundPicker}
@@ -247,6 +262,7 @@ function ResultCountdown({ v, reload }: { v: AppView; reload: () => void }) {
         {roundPicker}
         {r.from === 'you' && ownDate}
       </div>
+      <Mascot pose={waitPose} size={96} priority className="hidden self-end sm:block" />
     </section>
   );
 }
@@ -302,8 +318,11 @@ function ResultCard({ v, reload, onAdmitted }: { v: AppView; reload: () => void;
     rejected: { title: 'Not admitted this time', body: 'That is tough news, and it says nothing about your worth. Your other applications are still moving.', tone: 'border-line bg-surface' },
     withdrawn: { title: 'You withdrew this application', body: 'It stays here for your records.', tone: 'border-line bg-surface' },
   }[s as 'admitted' | 'waitlisted' | 'rejected' | 'withdrawn'] ?? { title: 'Result recorded', body: '', tone: 'border-line bg-surface' };
+  const pose = ({ admitted: 'admitted', waitlisted: 'waitlisted', rejected: 'not-admitted' } as Record<string, MascotPose>)[s];
   return (
-    <section className={cn('flex flex-col gap-3 rounded-2xl border-2 p-6', copy.tone)}>
+    <section className={cn('flex flex-wrap items-center gap-5 rounded-2xl border-2 p-6', copy.tone)}>
+      {pose && <Mascot pose={pose} size={120} priority />}
+      <div className="flex min-w-[240px] flex-1 flex-col gap-3">
       <h2 className="text-[22px] font-black leading-tight text-ink">{copy.title}</h2>
       {copy.body && <p className="text-[15px] text-secondary">{copy.body}</p>}
       <div className="flex flex-wrap items-center gap-2.5">
@@ -314,6 +333,7 @@ function ResultCard({ v, reload, onAdmitted }: { v: AppView; reload: () => void;
         {s === 'admitted' && <Link href="/applications?view=decisions" className={outlineBtn}>Compare your offers</Link>}
         <ConfirmButton variant="ghost" size="sm" disabled={busy} message="Clear this result and go back to waiting?" onConfirm={() => void record('awaiting', 'Result cleared')}>Change the result</ConfirmButton>
       </div>
+      </div>
     </section>
   );
 }
@@ -322,6 +342,7 @@ function ResultCard({ v, reload, onAdmitted }: { v: AppView; reload: () => void;
 export function ApplicationDetail({ v, reload, onEdit, onDelete }: { v: AppView; reload: () => void; onEdit: () => void; onDelete: () => void }) {
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [party, setParty] = useState(0);
+  const [justSubmitted, setJustSubmitted] = useState(false);
   const a = v.row;
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-[18px]">
@@ -342,7 +363,16 @@ export function ApplicationDetail({ v, reload, onEdit, onDelete }: { v: AppView;
           </div>
         </div>
       </header>
-      {v.phase === 'prepare' && <PrepareView v={v} reload={reload} />}
+      {v.phase === 'prepare' && <PrepareView v={v} reload={reload} onSubmitted={() => { setJustSubmitted(true); setParty((n) => n + 1); }} />}
+      {justSubmitted && v.phase !== 'prepare' && (
+        <div className={cn(panel, 'pop-in flex flex-wrap items-center gap-4 border-fun-green-dark bg-fun-green/15 p-5')} role="status">
+          <Mascot pose="party" size={96} priority />
+          <div className="min-w-[200px] flex-1">
+            <p className="text-[20px] font-black leading-tight text-ink">Submitted. You did it!</p>
+            <p className="mt-1 text-[15px] text-secondary">Your application to {v.school} is in. Mochi is throwing you a little party.</p>
+          </div>
+        </div>
+      )}
       {v.phase === 'submitted' && <><ResultCountdown v={v} reload={reload} /><OutcomeButtons v={v} reload={reload} onAdmitted={() => setParty((n) => n + 1)} /></>}
       {v.phase === 'result' && <ResultCard v={v} reload={reload} onAdmitted={() => setParty((n) => n + 1)} />}
       {v.phase !== 'prepare' && <Submitted v={v} reload={reload} />}

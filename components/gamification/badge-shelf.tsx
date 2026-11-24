@@ -1,6 +1,7 @@
 'use client';
 import * as Icons from 'lucide-react';
 import type { Badge } from '@/lib/gamification';
+import { ArtImg } from '@/components/art';
 import { fmtDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -15,10 +16,18 @@ export function BadgeShelf({ badges, nextUp }: { badges: Badge[]; nextUp: Badge[
         {badges.map((b) => {
           const Icon = (Icons as unknown as Record<string, Icons.LucideIcon>)[b.icon] ?? Icons.Star;
           return (
-            <li key={b.id} className={cn('rounded-2xl border bg-surface p-3 text-center', !b.unlocked && 'opacity-80')}>
-              <span className={cn('mx-auto flex h-14 w-14 items-center justify-center rounded-full border-b-4 text-on-fun', b.unlocked ? FILL[b.color] : 'border-line/40 bg-border text-secondary')}>
-                {b.unlocked ? <Icon size={26} aria-hidden /> : <Icons.Lock size={22} aria-hidden />}
-              </span>
+            <li key={b.id} className={cn('rounded-2xl border bg-surface p-3 text-center', !b.unlocked && !b.art && 'opacity-80')}>
+              {b.art
+                // The ribbon on the art is blank on purpose: the badge name is the HTML text below it.
+                ? <span className="relative mx-auto block h-[84px] w-[84px]">
+                    <ArtImg src={b.art} alt="" size={84} className={cn(!b.unlocked && 'opacity-50 grayscale')} />
+                    {!b.unlocked && <span className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-surface text-secondary" aria-hidden><Icons.Lock size={12} /></span>}
+                  </span>
+                : <span className="flex h-[84px] items-center justify-center">
+                    <span className={cn('flex h-16 w-16 items-center justify-center rounded-full border-b-4 text-on-fun', b.unlocked ? FILL[b.color] : 'border-line/40 bg-border text-secondary')}>
+                      {b.unlocked ? <Icon size={28} aria-hidden /> : <Icons.Lock size={22} aria-hidden />}
+                    </span>
+                  </span>}
               <p className="mt-2 text-sm font-extrabold">{b.title}</p>
               <p className="text-xs text-secondary">{b.unlocked ? `Unlocked ${fmtDate(b.unlockedAt)}` : `${b.current} of ${b.target}`}</p>
               <span className="sr-only">{b.unlocked ? 'Unlocked' : 'Locked'}. {b.description}</span>

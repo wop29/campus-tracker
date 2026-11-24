@@ -350,6 +350,16 @@ test('copy: 4 to 6 subjects and openings per kind, chosen from the seed, stable 
   assert.equal(composeReminder(d, { userId: UID, name: null, today: TODAY }, OPTS)!.subject, mail(d, `${UID}:${TODAY}`).subject);
 });
 
+test('email html has the matching Mochi sticker on top; the text version has none', () => {
+  const want: Record<string, string> = { deadline_week: 'deadline-week', result_tomorrow: 'result-soon', nudge: 'nudge', nudge_final: 'nudge', submitted: 'milestone' };
+  for (const [key, sticker] of Object.entries(want)) {
+    const e = mail(DECISIONS[key]);
+    assert.match(e.html, new RegExp(`<img src="https://app\\.example\\.com/art/email/${sticker}\\.png" width="120" height="120" alt="Mochi [^"]+"`), key);
+    assert.ok(e.html.indexOf('/art/email/') < e.html.indexOf('Hi '), `${key}: sticker comes first`);
+    assert.ok(!e.text.includes('/art/email/') && !e.text.includes('Mochi'), `${key}: text unchanged`);
+  }
+});
+
 test('email html is escaped', () => {
   const d = decideReminder(facts({ apps: [fApp({ label: 'A&B <School>', deadlineOn: day(7), remaining: [open('<b>Essay</b> "one"', 'essays')] })] }));
   const e = mail(d);

@@ -24,4 +24,5 @@ export async function proxy(req: NextRequest) {
   if (user && req.nextUrl.pathname === '/login') return NextResponse.redirect(new URL('/', req.url));
   return res;
 }
-export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/).*)'] };
+// Static art and icons stay public: the login page shows Mochi and email clients load the stickers signed out.
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.png|manifest.webmanifest|icons/|art/).*)'] };

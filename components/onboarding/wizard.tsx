@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, BookOpen, Check, Compass, GraduationCap, ListChecks, PartyPopper, School, Send, Sparkles } from 'lucide-react';
 import { Button, ErrorBox } from '@/components/ui';
-import { Mascot, type MascotMood } from '@/components/mascot';
+import { Mascot, type MascotPose } from '@/components/mascot';
 import { Confetti } from '@/components/confetti';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { THEMES, DEFAULT_THEME, applyTheme, isThemeId, readThemeCookie, writeThemeCookie, type ThemeId } from '@/components/theme/themes';
@@ -16,11 +16,11 @@ import { OptionCard, onGroupKeyDown } from './option-card';
 import { loadSettings, saveOnboarding } from './data';
 
 const STEPS = 4;
-const MASCOT_LINES: { mood: MascotMood; line: string }[] = [
-  { mood: 'happy', line: 'Hi, I am Mo! Four quick taps and you are set. No essays today, promise.' },
-  { mood: 'cheer', line: 'Dream big. You can pick more than one country.' },
-  { mood: 'think', line: 'Joining late is fine, we will start you where you are.' },
-  { mood: 'cheer', line: 'Last one! Make this space feel like yours.' },
+const MASCOT_LINES: { pose: MascotPose; line: string }[] = [
+  { pose: 'wave', line: 'Hi, I am Mochi! Four quick taps and you are set. No essays today, promise.' },
+  { pose: 'search', line: 'Dream big. You can pick more than one country.' },
+  { pose: 'thinking', line: 'Joining late is fine, we will start you where you are.' },
+  { pose: 'cheer', line: 'Last one! Make this space feel like yours.' },
 ];
 const PROGRAM_OPTIONS: { id: Program; label: string }[] = [{ id: 'mba', label: 'MBA' }, { id: 'masters', label: "Master's" }, { id: 'phd', label: 'PhD' }];
 const DEST_SHORT: Record<Destination, string> = { us: 'US', canada: 'CA', australia: 'AU', uk: 'UK' };
@@ -124,7 +124,7 @@ export function OnboardingWizard() {
     return (
       <div className="flex flex-col items-center text-center" role="status">
         <Confetti fire={fire} intense />
-        <Mascot mood="cheer" size={140} />
+        <Mascot pose="party" size={140} priority />
         <h1 className="mt-4 text-3xl font-extrabold">You are all set!</h1>
         <p className="mt-2 max-w-sm text-secondary">Your path is ready. It is short, and every step is one small action. Taking you there now...</p>
       </div>
@@ -150,7 +150,7 @@ export function OnboardingWizard() {
       {step === 0 && <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-fun-yellow/30 px-3 py-1 text-xs font-extrabold"><Sparkles size={14} aria-hidden />Takes about 1 minute</p>}
 
       <div className="mb-5 flex items-end gap-3">
-        <Mascot mood={m.mood} size={72} />
+        <Mascot key={m.pose} pose={m.pose} size={72} decorative priority className="pop-in" />
         <p className="relative rounded-2xl border-2 bg-surface px-4 py-3 text-sm font-bold shadow-[0_3px_0_var(--color-border)]" aria-live="polite">{m.line}</p>
       </div>
 

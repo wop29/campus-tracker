@@ -1,11 +1,42 @@
-// "Mo the Mortar": an original blob character in a graduation cap. Colors come from theme CSS variables.
+// Mochi, the green bean in a graduation cap. Two modes:
+//  - pose: one of the illustrated poses in public/art (preferred everywhere)
+//  - mood: the original SVG drawing, kept as a fallback where no illustration fits. Colors come from theme CSS variables.
+import { MASCOT_POSES, type MascotPose } from '@/lib/art';
+import { ArtImg } from '@/components/art';
+import { cn } from '@/lib/utils';
+export type { MascotPose } from '@/lib/art';
 export type MascotMood = 'happy' | 'cheer' | 'think' | 'sleep';
 
 const v = (name: string) => `var(--color-${name})`;
 const BODY = 'M60 30 C88 30 104 52 104 76 C104 96 86 106 60 106 C34 106 16 96 16 76 C16 52 32 30 60 30 Z';
-const LABEL: Record<MascotMood, string> = { happy: 'Mo the mascot, smiling', cheer: 'Mo the mascot, cheering', think: 'Mo the mascot, thinking', sleep: 'Mo the mascot, sleeping' };
+const LABEL: Record<MascotMood, string> = { happy: 'Mochi the mascot, smiling', cheer: 'Mochi the mascot, cheering', think: 'Mochi the mascot, thinking', sleep: 'Mochi the mascot, sleeping' };
 
-export function Mascot({ mood = 'happy', size = 96 }: { mood?: MascotMood; size?: number }) {
+type MascotProps = {
+  mood?: MascotMood; size?: number;
+  /** Use an illustrated pose instead of the SVG drawing. */
+  pose?: MascotPose;
+  /** Override the default alt text of the pose. */
+  alt?: string;
+  /** Purely decorative: empty alt and hidden from screen readers. */
+  decorative?: boolean;
+  /** Load right away (above the fold). Otherwise the image is lazy loaded. */
+  priority?: boolean;
+  /** Gentle idle animation (skipped when the device asks for reduced motion). */
+  animate?: boolean;
+  className?: string;
+};
+
+export function Mascot({ pose, ...p }: MascotProps) {
+  if (pose) return <MascotArt pose={pose} {...p} />;
+  return <MascotSvg mood={p.mood} size={p.size} />;
+}
+
+function MascotArt({ pose, size = 96, alt, decorative, priority, animate, className }: MascotProps & { pose: MascotPose }) {
+  const art = MASCOT_POSES[pose];
+  return <ArtImg src={art.src} size={size} alt={decorative ? '' : alt ?? art.alt} priority={priority} className={cn(animate && 'mascot-bounce', className)} />;
+}
+
+function MascotSvg({ mood = 'happy', size = 96 }: { mood?: MascotMood; size?: number }) {
   const stroke = { fill: 'none', stroke: v('on-fun'), strokeWidth: 3.5, strokeLinecap: 'round' as const };
   const look = mood === 'think' ? { x: 3, y: -3 } : { x: 0, y: 0 };
   const eyeL = 46 + look.x; const eyeR = 74 + look.x; const eyeY = 66 + look.y;

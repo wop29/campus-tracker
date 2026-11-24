@@ -67,7 +67,7 @@ function ApplicationsPage() {
   if (!views.length || !selected) {
     return (
       <div>
-        <EmptyState mascot title="No applications yet" hint="Find a university you like, then add it here. We will build the checklist for you."
+        <EmptyState art="no-applications" title="No applications yet" hint="Find a university you like, then add it here. We will build the checklist for you."
           action={<Link href="/schools" className={findLink}>Find universities</Link>} />
         {dialogEl}
       </div>
