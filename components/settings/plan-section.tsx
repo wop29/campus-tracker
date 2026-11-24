@@ -6,8 +6,8 @@ import { useToast } from '@/components/toast';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { loadOnboarding, saveOnboarding } from '@/components/onboarding/data';
 import {
-  DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, PROGRAMS, PROGRAM_LABEL, STAGES,
-  intakeOptions, type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
+  STATUS_FOR_TRACK, STATUS_LABEL, parseAbout, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, PROGRAMS, PROGRAM_LABEL, STAGES,
+  intakeOptions, type About, type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +51,8 @@ export function PlanSection() {
   if (!ob || !saved) return <Card className="mb-4"><h2 className="text-base font-semibold">Your plan</h2><p className="mt-2 text-sm text-secondary">Loading...</p></Card>;
 
   const set = (patch: Partial<Onboarding>) => setOb({ ...ob, ...patch });
+  // Keep raw text while typing; parseAbout trims on save.
+  const setAbout = (patch: About) => setOb({ ...ob, about: { ...ob.about, ...patch } });
   const programs = ob.programs ?? (ob.program ? [ob.program] : []);
   const setTrack = (track: Track) => set(track === 'undergrad'
     ? { track, program: undefined, programs: undefined }
@@ -64,7 +66,8 @@ export function PlanSection() {
     if (ob.track === 'grad' && !programs.length) { toast('Pick at least one program', 'err'); return; }
     setSaving(true);
     try {
-      const stored = await saveOnboarding(supabaseBrowser(), { ...ob, done: true });
+      const about = parseAbout(ob.about);
+      const stored = await saveOnboarding(supabaseBrowser(), { ...ob, about, done: true });
       const switched = stored.track !== saved?.track;
       setSaved(stored); setOb(stored);
       toast(switched ? `Switched to ${stored.track === 'undergrad' ? 'undergraduate' : 'graduate'} mode. Your pages now follow this plan.` : 'Your plan is saved');
@@ -87,6 +90,20 @@ export function PlanSection() {
           <GraduationCap size={16} aria-hidden /> Graduate school (S2/S3)
         </button>
       </Row>
+
+      <Row label="What are you doing now?">
+        {STATUS_FOR_TRACK[ob.track].map((st) => <Chip key={st} on={ob.about?.status === st} onClick={() => setAbout({ status: ob.about?.status === st ? undefined : st })}>{STATUS_LABEL[st]}</Chip>)}
+      </Row>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="text-sm font-semibold">{ob.track === 'undergrad' ? 'Your school' : 'Your university (current or most recent)'}
+          <input value={ob.about?.school ?? ''} onChange={(e) => setAbout({ school: e.target.value })} maxLength={120} placeholder={ob.track === 'undergrad' ? 'e.g. SMAN 3 Bandung' : 'e.g. Institut Teknologi Bandung'}
+            className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-normal" />
+        </label>
+        <label className="text-sm font-semibold">Where do you live now?
+          <input value={ob.about?.city ?? ''} onChange={(e) => setAbout({ city: e.target.value })} maxLength={120} placeholder="e.g. Jakarta, Indonesia"
+            className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-normal" />
+        </label>
+      </div>
 
       {ob.track === 'grad' && (
         <Row label="Programs" hint="Pick one or more. The first one is your main choice.">

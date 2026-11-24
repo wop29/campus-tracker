@@ -6,6 +6,9 @@ export type Program = 'mba' | 'masters' | 'phd';
 export type Destination = 'us' | 'canada' | 'australia' | 'uk' | 'singapore' | 'hongkong';
 export type Field = 'business' | 'cs' | 'engineering' | 'econ-finance' | 'data-science' | 'design' | 'health' | 'social-sciences' | 'other';
 export type Stage = 'exploring' | 'shortlisting' | 'applying' | 'submitted';
+export type CurrentStatus = 'sma_10_11' | 'sma_12' | 'gap_year' | 'uni_student' | 'uni_final' | 'working' | 'masters' | 'other';
+/** Optional "About you" answers: what the student does now, where they study or studied, and where they live. */
+export type About = { status?: CurrentStatus; school?: string; city?: string };
 
 export type Onboarding = {
   done: boolean;
@@ -18,6 +21,7 @@ export type Onboarding = {
   stage: Stage;
   reminders: { email: boolean; hourLocal: number };
   timezone: string;
+  about?: About; // optional, absent when skipped
 };
 
 export const TRACKS: readonly Track[] = ['grad', 'undergrad'];
@@ -25,6 +29,26 @@ export const PROGRAMS: readonly Program[] = ['mba', 'masters', 'phd'];
 export const DESTINATIONS: readonly Destination[] = ['us', 'canada', 'australia', 'uk', 'singapore', 'hongkong'];
 export const FIELDS: readonly Field[] = ['business', 'cs', 'engineering', 'econ-finance', 'data-science', 'design', 'health', 'social-sciences', 'other'];
 export const STAGES: readonly Stage[] = ['exploring', 'shortlisting', 'applying', 'submitted'];
+export const STATUSES: readonly CurrentStatus[] = ['sma_10_11', 'sma_12', 'gap_year', 'uni_student', 'uni_final', 'working', 'masters', 'other'];
+export const STATUS_LABEL: Record<CurrentStatus, string> = {
+  sma_10_11: 'In high school (SMA/SMK, Grade 10 or 11)', sma_12: 'Final year of high school (Grade 12)', gap_year: 'Finished high school, taking a gap year',
+  uni_student: 'At university now', uni_final: 'Final year of university', working: 'Working', masters: "Doing a master's now", other: 'Something else',
+};
+/** Status choices that fit each track, most common first. */
+export const STATUS_FOR_TRACK: Record<Track, readonly CurrentStatus[]> = {
+  undergrad: ['sma_10_11', 'sma_12', 'gap_year', 'uni_student', 'other'],
+  grad: ['uni_final', 'working', 'masters', 'other'],
+};
+const ABOUT_MAX = 120;
+/** Cleans the optional About answers; returns undefined when nothing useful is left. */
+export function parseAbout(v: unknown): About | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  const text = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, ABOUT_MAX) : undefined);
+  const status = typeof r.status === 'string' && (STATUSES as readonly string[]).includes(r.status) ? (r.status as CurrentStatus) : undefined;
+  const out: About = { ...(status ? { status } : {}), ...(text(r.school) ? { school: text(r.school) } : {}), ...(text(r.city) ? { city: text(r.city) } : {}) };
+  return Object.keys(out).length ? out : undefined;
+}
 export const REMINDER_HOURS = [8, 12, 19] as const;
 export const DEFAULT_REMINDER_HOUR = 19;
 export const DEFAULT_TIMEZONE = 'Asia/Jakarta';
@@ -75,9 +99,11 @@ export function parseOnboarding(settings: unknown): Onboarding {
   const r = isObj(raw.reminders) ? raw.reminders : {};
   const hour = typeof r.hourLocal === 'number' && Number.isInteger(r.hourLocal) && r.hourLocal >= 0 && r.hourLocal <= 23 ? r.hourLocal : DEFAULT_REMINDER_HOUR;
   const email = typeof r.email === 'boolean' ? r.email : DEFAULT_ONBOARDING.reminders.email;
+  const about = parseAbout(raw.about);
   return {
     done: raw.done === true, track, ...(program ? { program, programs } : {}), ...(fields.length ? { fields } : {}), destinations, ...(intake ? { intake } : {}), stage,
     reminders: { email, hourLocal: hour }, timezone: isValidTimeZone(raw.timezone) ? raw.timezone : DEFAULT_TIMEZONE,
+    ...(about ? { about } : {}),
   };
 }
 

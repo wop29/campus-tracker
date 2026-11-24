@@ -8,17 +8,18 @@ import { Confetti } from '@/components/confetti';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { THEMES, DEFAULT_THEME, applyTheme, isThemeId, readThemeCookie, writeThemeCookie, type ThemeId } from '@/components/theme/themes';
 import {
-  DEFAULT_ONBOARDING, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, REMINDER_HOURS, browserTimeZone, intakeOptions, parseOnboarding, timeZoneOptions,
-  type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
+  DEFAULT_ONBOARDING, STATUS_FOR_TRACK, STATUS_LABEL, parseAbout, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, REMINDER_HOURS, browserTimeZone, intakeOptions, parseOnboarding, timeZoneOptions,
+  type CurrentStatus, type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 import { OptionCard, onGroupKeyDown } from './option-card';
 import { loadSettings, saveOnboarding } from './data';
 import { OnboardingSkeleton } from './skeleton';
 
-const STEPS = 4;
+const STEPS = 5;
 const MASCOT_LINES: { pose: MascotPose; line: string }[] = [
-  { pose: 'wave', line: 'Hi, I am Mochi! Four quick steps and you are set. No essays today, promise.' },
+  { pose: 'wave', line: 'Hi, I am Mochi! Five quick steps and you are set. No essays today, promise.' },
+  { pose: 'wave', line: 'Nice to meet you! Tell me a little about where you are now. All optional.' },
   { pose: 'search', line: 'Dream big. You can pick more than one country.' },
   { pose: 'thinking', line: 'No wrong answers here. Pick the one closest to today.' },
   { pose: 'cheer', line: 'Last one! Make this space feel like yours.' },
@@ -46,6 +47,9 @@ export function OnboardingWizard() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [intake, setIntake] = useState<string>(NOT_SURE);
   const [stage, setStage] = useState<Stage | null>(null);
+  const [status, setStatus] = useState<CurrentStatus | null>(null);
+  const [school, setSchool] = useState('');
+  const [city, setCity] = useState('');
   const [theme, setTheme] = useState<ThemeId>(DEFAULT_THEME);
   const [email, setEmail] = useState(true);
   const [hour, setHour] = useState<number>(DEFAULT_ONBOARDING.reminders.hourLocal);
@@ -75,6 +79,7 @@ export function OnboardingWizard() {
         setTrack(ob.track); setPrograms(ob.programs ?? (ob.program ? [ob.program] : [])); setFields(ob.fields ?? []);
         setDestinations(ob.destinations); setStage(ob.stage);
         if (ob.intake) setIntake(ob.intake);
+        if (ob.about) { setStatus(ob.about.status ?? null); setSchool(ob.about.school ?? ''); setCity(ob.about.city ?? ''); }
         setEmail(ob.reminders.email); setHour(ob.reminders.hourLocal);
         if (ob.done) setTimezone(ob.timezone);
       } catch { /* start fresh */ } finally { if (!cancelled) setLoading(false); }
@@ -90,6 +95,7 @@ export function OnboardingWizard() {
 
   const valid = [
     track === 'undergrad' || (track === 'grad' && programs.length > 0),
+    true,
     destinations.length > 0,
     stage !== null,
     true,
@@ -111,12 +117,15 @@ export function OnboardingWizard() {
     } finally { setSaving(false); }
   }
 
+  const about = parseAbout({ status: status && track && STATUS_FOR_TRACK[track].includes(status) ? status : undefined, school, city });
+
   async function finish() {
     const ob: Onboarding = {
       done: true, track: track ?? 'grad', ...(track === 'grad' && programs.length ? { program: programs[0], programs } : {}),
       ...(fields.length ? { fields } : {}), destinations,
       ...(intake !== NOT_SURE ? { intake } : {}), stage: stage ?? 'exploring',
       reminders: { email, hourLocal: hour }, timezone,
+      ...(about ? { about } : {}),
     };
     if (!(await save(ob, { theme }))) return;
     setFinished(true); setFire((f) => f + 1);
@@ -203,6 +212,32 @@ export function OnboardingWizard() {
 
         {step === 1 && (
           <fieldset>
+            <legend className="sr-only">About you</legend>
+            <h1 ref={heading} tabIndex={-1} className="mb-1 text-2xl font-extrabold outline-none sm:text-3xl">A little about you</h1>
+            <p className="mb-4 text-sm text-secondary">All optional. It helps us suggest the right next steps.</p>
+            <p id="status-label" className="mb-2 text-sm font-extrabold">What are you doing now?</p>
+            <div role="radiogroup" aria-labelledby="status-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+              {STATUS_FOR_TRACK[track ?? 'grad'].map((st, i) => (
+                <OptionCard key={st} size="chip" selected={status === st} tabbable={status === st || (status === null && i === 0)} onSelect={() => setStatus(status === st ? null : st)} title={STATUS_LABEL[st]} />
+              ))}
+            </div>
+            <label className="mt-5 block text-sm font-extrabold">
+              {track === 'undergrad' ? 'Your school' : 'Your university (current or most recent)'}
+              <input value={school} onChange={(e) => setSchool(e.target.value)} maxLength={120} autoComplete="organization"
+                placeholder={track === 'undergrad' ? 'e.g. SMAN 3 Bandung' : 'e.g. Institut Teknologi Bandung'}
+                className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-bold text-ink placeholder:font-normal placeholder:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
+            </label>
+            <label className="mt-4 block text-sm font-extrabold">
+              Where do you live now?
+              <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={120} autoComplete="address-level2"
+                placeholder="e.g. Jakarta, Indonesia"
+                className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-bold text-ink placeholder:font-normal placeholder:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
+            </label>
+          </fieldset>
+        )}
+
+        {step === 2 && (
+          <fieldset>
             <legend className="sr-only">Where do you want to study?</legend>
             <h1 ref={heading} tabIndex={-1} className="mb-1 text-2xl font-extrabold outline-none sm:text-3xl">Where do you want to study?</h1>
             <p className="mb-4 text-sm text-secondary">Pick all that apply.</p>
@@ -223,7 +258,7 @@ export function OnboardingWizard() {
           </fieldset>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <fieldset>
             <legend className="sr-only">Where are you right now?</legend>
             <h1 ref={heading} tabIndex={-1} className="mb-1 text-2xl font-extrabold outline-none sm:text-3xl">Where are you right now?</h1>
@@ -236,7 +271,7 @@ export function OnboardingWizard() {
           </fieldset>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <fieldset>
             <legend className="sr-only">Make it yours</legend>
             <h1 ref={heading} tabIndex={-1} className="mb-4 text-2xl font-extrabold outline-none sm:text-3xl">Make it yours</h1>

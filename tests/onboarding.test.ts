@@ -82,7 +82,7 @@ test('onboarding copy: no em dashes, no "actually", says steps not taps, no dail
   const files = (await readdir(dir)).filter((f) => f.endsWith('.tsx'));
   const all = (await Promise.all(files.map((f) => readFile(new URL(f, dir), 'utf8')))).join('\n') + Object.values(FIELD_LABEL).join(' ');
   assert.ok(!all.includes('—')); assert.ok(!/\bactually\b/i.test(all));
-  assert.ok(!/quick taps/i.test(all)); assert.match(all, /Four quick steps/);
+  assert.ok(!/quick taps/i.test(all)); assert.match(all, /Five quick steps/);
   assert.ok(!/daily email nudge/i.test(all)); assert.match(all, /Gentle email reminders \(only when it helps, never daily\)/);
   // step 3: the mascot line and the subtitle must not repeat each other
   const stepThree = 'Joining late is fine, we will start you where you are.';
@@ -143,4 +143,15 @@ test('journey: submitted starts at Finish', () => {
 test('journey: percent counts done over non-skipped lessons for an early starter', () => {
   const j = computeJourney(d({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 1, tests: 1 }, schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 3, withTier: 1 } }), { track: 'grad', stage: 'exploring' });
   assert.equal(j.doneCount, 4); assert.equal(j.overallPct, 40); assert.equal(j.step, 5); assert.equal(j.currentUnitId, 'plan');
+});
+
+test('about you: optional, trimmed, survives save and drops junk', async () => {
+  const { parseOnboarding, parseAbout, STATUS_FOR_TRACK } = await import('../lib/onboarding.ts');
+  assert.equal(parseAbout({}), undefined);
+  assert.deepEqual(parseAbout({ status: 'sma_12', school: '  SMAN 3 Bandung ', city: '' }), { status: 'sma_12', school: 'SMAN 3 Bandung' });
+  assert.equal(parseAbout({ status: 'astronaut' }), undefined);
+  const ob = parseOnboarding({ onboarding: { done: true, track: 'undergrad', destinations: ['uk'], stage: 'exploring', about: { status: 'sma_12', city: 'Jakarta' } } });
+  assert.deepEqual(ob.about, { status: 'sma_12', city: 'Jakarta' });
+  assert.equal(parseOnboarding({ onboarding: { done: true, track: 'grad', destinations: [], stage: 'exploring' } }).about, undefined);
+  assert.ok(STATUS_FOR_TRACK.undergrad.includes('sma_12') && STATUS_FOR_TRACK.grad.includes('working'));
 });
