@@ -13,6 +13,7 @@ import { downloadFile } from '@/lib/export';
 import { ThemeSection } from '@/components/settings/theme-section';
 import { ImportSection } from '@/components/settings/import-section';
 import { RemindersSection } from '@/components/settings/reminders-section';
+import { PlanSection } from '@/components/settings/plan-section';
 import { useEmailConfigured } from '@/components/settings/use-email-status';
 import { aiEnabled } from '@/lib/features';
 import { HIGH_AT, MEDIUM_AT } from '@/lib/nba';
@@ -43,6 +44,7 @@ export default function SettingsPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader title="Settings" subtitle="Your choices are saved to your account, so they follow you to any device." />
+      <div id="plan"><PlanSection /></div>
       <ProfileSection onSaved={reload} />
       <ThemeSection />
       <RemindersSection />
