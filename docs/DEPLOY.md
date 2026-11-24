@@ -1,4 +1,4 @@
-# Deploying University Hunter
+# Deploying Campus Quest
 
 The app is a Next.js 16 server plus a Supabase project (Postgres, Auth, Storage). You host the Next.js part anywhere that can run Node.js or a Docker image. Supabase stays where it is, or moves with you (see [MIGRATING.md](./MIGRATING.md)).
 

@@ -1,4 +1,4 @@
-# University Hunter
+# Campus Quest
 
 A personal MBA admissions command center: schools, applications, requirements, essays with version history, documents, recommenders, AI coaching, interviews, scholarships, finances and decisions.
 Stack: Next.js (App Router), TypeScript, Tailwind v4, Supabase (Postgres, Auth, Storage), Anthropic Claude API, Recharts, Zod.

@@ -1,4 +1,4 @@
-// Reminder emails for University Hunter. Called by Vercel Cron (vercel.json, once a day at 12:00 UTC = 19:00 Jakarta)
+// Reminder emails for Campus Quest. Called by Vercel Cron (vercel.json, once a day at 12:00 UTC = 19:00 Jakarta)
 // with "Authorization: Bearer <CRON_SECRET>". Most days most people get NO email: lib/reminders.ts decides, per user,
 // whether today is a deadline_week, result_soon, nudge or celebration day (at most one email, highest priority wins).
 // Safe to call more often: reminder_log has one row per user per local date and the row is claimed BEFORE sending,

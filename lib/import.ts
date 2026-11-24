@@ -35,7 +35,7 @@ const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 const COLUMN = /^[a-z_][a-z0-9_]{0,62}$/;
 
 const backupSchema = z.object({
-  app: z.literal(BACKUP_APP, { error: 'This file is not a backup from University Hunter' }),
+  app: z.literal(BACKUP_APP, { error: 'This file is not a backup from Campus Quest' }),
   format_version: z.literal(BACKUP_FORMAT_VERSION, { error: `Unsupported backup format (this app reads format ${BACKUP_FORMAT_VERSION})` }),
   exported_at: z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'exported_at is not a date'),
   tables: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))),

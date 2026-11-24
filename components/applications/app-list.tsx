@@ -26,7 +26,7 @@ export function ApplicationList({ views, selectedId, className }: { views: AppVi
           </Link>
         );
       })}
-      <Link href="/schools" className="flex min-h-12 items-center justify-center rounded-2xl border-2 border-dashed border-line px-3 text-[15px] font-extrabold text-primary hover:bg-surface">+ Add from University Hunter</Link>
+      <Link href="/schools" className="flex min-h-12 items-center justify-center rounded-2xl border-2 border-dashed border-line px-3 text-[15px] font-extrabold text-primary hover:bg-surface">+ Find a university</Link>
       <p className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-[13px] font-bold">
         <Link href="/applications?view=tasks" className="text-secondary underline hover:text-ink">My tasks</Link>
         {views.some((v) => v.row.stage === 'admitted') && <Link href="/applications?view=decisions" className="text-secondary underline hover:text-ink">Compare offers</Link>}

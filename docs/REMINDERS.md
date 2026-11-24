@@ -1,4 +1,4 @@
-# Email reminders (University Hunter)
+# Email reminders (Campus Quest)
 
 Reminders are meant to feel fun, encouraging and calm. Never nagging. So this is **not** one email every day. A student gets an email only when there is a good reason, and never more than one a day:
 
@@ -40,7 +40,7 @@ Then pick **one** way to send email:
 | Name | What to put |
 | --- | --- |
 | `RESEND_API_KEY` | resend.com > **API Keys** > Create API key (Sending access is enough). |
-| `REMINDER_FROM` | For example `University Hunter <reminders@yourdomain.com>`. The domain must be verified in Resend (**Domains** > Add domain, then add the DNS records it shows). For a quick test you can use `onboarding@resend.dev`, which only delivers to your own Resend account email. |
+| `REMINDER_FROM` | For example `Campus Quest <reminders@yourdomain.com>`. The domain must be verified in Resend (**Domains** > Add domain, then add the DNS records it shows). For a quick test you can use `onboarding@resend.dev`, which only delivers to your own Resend account email. |
 
 Free plan: 100 emails a day and 3,000 a month.
 

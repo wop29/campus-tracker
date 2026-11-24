@@ -1,4 +1,4 @@
-// Email reminders for University Hunter: pure logic only (no database, no network, no secrets), so it runs in tests,
+// Email reminders for Campus Quest: pure logic only (no database, no network, no secrets), so it runs in tests,
 // on the server (app/api/cron/daily-reminders) and in the browser (the Settings preview).
 //
 // The idea: emails should feel fun, encouraging and calm. Never nagging. So there is no "one email every day".
@@ -16,7 +16,7 @@
 import { governingDeadline, isActiveApp, isSubmitted, reqDone } from './overview-logic.ts';
 import { parseOnboarding, DEFAULT_REMINDER_HOUR, DEFAULT_TIMEZONE, type Onboarding } from './onboarding.ts';
 
-export const PRODUCT_NAME = 'University Hunter';
+export const PRODUCT_NAME = 'Campus Quest';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Preferences
