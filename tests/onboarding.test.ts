@@ -155,3 +155,17 @@ test('about you: optional, trimmed, survives save and drops junk', async () => {
   assert.equal(parseOnboarding({ onboarding: { done: true, track: 'grad', destinations: [], stage: 'exploring' } }).about, undefined);
   assert.ok(STATUS_FOR_TRACK.undergrad.includes('sma_12') && STATUS_FOR_TRACK.grad.includes('working'));
 });
+
+test('about you: funding, LPDP only with LPDP funding, English status, worry', async () => {
+  const { parseAbout } = await import('../lib/onboarding.ts');
+  assert.deepEqual(parseAbout({ funding: 'lpdp', lpdp: 'applied', english: 'not_yet', worry: 'money' }), { funding: 'lpdp', lpdp: 'applied', english: 'not_yet', worry: 'money' });
+  assert.deepEqual(parseAbout({ funding: 'family', lpdp: 'awarded' }), { funding: 'family' });
+  assert.equal(parseAbout({ funding: 'lottery', english: 'maybe' }), undefined);
+});
+test('journey: English status changes the test step wording', async () => {
+  const { buildUnits } = await import('../lib/journey.ts');
+  const t = (english?: 'taken' | 'booked' | 'not_yet') => buildUnits({ track: 'undergrad', stage: 'exploring', english })[0].lessons[1].title;
+  assert.equal(t('not_yet'), 'Book your English test');
+  assert.match(t('booked'), /after the test/);
+  assert.equal(t(), 'Add a test score');
+});

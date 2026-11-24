@@ -8,8 +8,8 @@ import { Confetti } from '@/components/confetti';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { THEMES, DEFAULT_THEME, applyTheme, isThemeId, readThemeCookie, writeThemeCookie, type ThemeId } from '@/components/theme/themes';
 import {
-  DEFAULT_ONBOARDING, STATUS_FOR_TRACK, STATUS_LABEL, parseAbout, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, REMINDER_HOURS, browserTimeZone, intakeOptions, parseOnboarding, timeZoneOptions,
-  type CurrentStatus, type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
+  DEFAULT_ONBOARDING, STATUS_FOR_TRACK, STATUS_LABEL, parseAbout, FUNDINGS, FUNDING_LABEL, LPDP_STATUSES, LPDP_LABEL, ENGLISH_STATUSES, ENGLISH_LABEL, WORRIES, WORRY_LABEL, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, REMINDER_HOURS, browserTimeZone, intakeOptions, parseOnboarding, timeZoneOptions,
+  type CurrentStatus, type EnglishStatus, type Funding, type LpdpStatus, type Worry, type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 import { OptionCard, onGroupKeyDown } from './option-card';
@@ -19,7 +19,7 @@ import { OnboardingSkeleton } from './skeleton';
 const STEPS = 5;
 const MASCOT_LINES: { pose: MascotPose; line: string }[] = [
   { pose: 'wave', line: 'Hi, I am Mochi! Five quick steps and you are set. No essays today, promise.' },
-  { pose: 'wave', line: 'Nice to meet you! Tell me a little about where you are now. All optional.' },
+  { pose: 'wave', line: 'Nice to meet you! A few quick questions about you. All optional.' },
   { pose: 'search', line: 'Dream big. You can pick more than one country.' },
   { pose: 'thinking', line: 'No wrong answers here. Pick the one closest to today.' },
   { pose: 'cheer', line: 'Last one! Make this space feel like yours.' },
@@ -34,6 +34,13 @@ const STAGE_OPTIONS: { id: Stage; title: string; subtitle: string; icon: React.R
 ];
 const HOUR_OPTIONS: { hour: (typeof REMINDER_HOURS)[number]; label: string }[] = [{ hour: 8, label: 'Morning (8:00)' }, { hour: 12, label: 'Lunch (12:00)' }, { hour: 19, label: 'Evening (19:00)' }];
 const NOT_SURE = 'not-sure';
+const WORRY_TIP: Record<Exclude<Worry, 'none'>, string> = {
+  schools: 'Choosing schools gets easier with Find universities: everything is already researched.',
+  essays: 'Essays feel big, so we break them into small drafts.',
+  tests: 'We will remind you to book your test early, so the dates never sneak up on you.',
+  money: 'You will see costs and scholarships on every program, so there are no surprises.',
+  deadlines: 'Every application shows the next open round and a countdown, so nothing slips.',
+};
 
 export function OnboardingWizard() {
   const router = useRouter();
@@ -50,6 +57,10 @@ export function OnboardingWizard() {
   const [status, setStatus] = useState<CurrentStatus | null>(null);
   const [school, setSchool] = useState('');
   const [city, setCity] = useState('');
+  const [funding, setFunding] = useState<Funding | null>(null);
+  const [lpdp, setLpdp] = useState<LpdpStatus | null>(null);
+  const [english, setEnglish] = useState<EnglishStatus | null>(null);
+  const [worry, setWorry] = useState<Worry | null>(null);
   const [theme, setTheme] = useState<ThemeId>(DEFAULT_THEME);
   const [email, setEmail] = useState(true);
   const [hour, setHour] = useState<number>(DEFAULT_ONBOARDING.reminders.hourLocal);
@@ -79,7 +90,7 @@ export function OnboardingWizard() {
         setTrack(ob.track); setPrograms(ob.programs ?? (ob.program ? [ob.program] : [])); setFields(ob.fields ?? []);
         setDestinations(ob.destinations); setStage(ob.stage);
         if (ob.intake) setIntake(ob.intake);
-        if (ob.about) { setStatus(ob.about.status ?? null); setSchool(ob.about.school ?? ''); setCity(ob.about.city ?? ''); }
+        if (ob.about) { const a = ob.about; setStatus(a.status ?? null); setSchool(a.school ?? ''); setCity(a.city ?? ''); setFunding(a.funding ?? null); setLpdp(a.lpdp ?? null); setEnglish(a.english ?? null); setWorry(a.worry ?? null); }
         setEmail(ob.reminders.email); setHour(ob.reminders.hourLocal);
         if (ob.done) setTimezone(ob.timezone);
       } catch { /* start fresh */ } finally { if (!cancelled) setLoading(false); }
@@ -117,7 +128,7 @@ export function OnboardingWizard() {
     } finally { setSaving(false); }
   }
 
-  const about = parseAbout({ status: status && track && STATUS_FOR_TRACK[track].includes(status) ? status : undefined, school, city });
+  const about = parseAbout({ status: status && track && STATUS_FOR_TRACK[track].includes(status) ? status : undefined, school, city, funding, lpdp, english, worry });
 
   async function finish() {
     const ob: Onboarding = {
@@ -146,7 +157,7 @@ export function OnboardingWizard() {
         <Confetti fire={fire} intense />
         <Mascot pose="party" size={140} priority />
         <h1 className="mt-4 text-3xl font-extrabold">You are all set!</h1>
-        <p className="mt-2 max-w-sm text-secondary">Your path is ready. It is short, and every step is one small action. Taking you there now...</p>
+        <p className="mt-2 max-w-sm text-secondary">Your path is ready. It is short, and every step is one small action.{worry && worry !== 'none' ? ` ${WORRY_TIP[worry]}` : ''} Taking you there now...</p>
       </div>
     );
   }
@@ -233,6 +244,26 @@ export function OnboardingWizard() {
                 placeholder="e.g. Jakarta, Indonesia"
                 className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-bold text-ink placeholder:font-normal placeholder:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
             </label>
+            <p id="funding-label" className="mb-2 mt-5 text-sm font-extrabold">How will you pay for your studies?</p>
+            <div role="radiogroup" aria-labelledby="funding-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+              {FUNDINGS.map((x, i) => (
+                <OptionCard key={x} size="chip" selected={funding === x} tabbable={funding === x || (funding === null && i === 0)} onSelect={() => setFunding(funding === x ? null : x)} title={FUNDING_LABEL[x]} />
+              ))}
+            </div>
+            {funding === 'lpdp' && (<>
+            <p id="lpdp-label" className="mb-2 mt-5 text-sm font-extrabold">Where are you with LPDP?</p>
+            <div role="radiogroup" aria-labelledby="lpdp-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+              {LPDP_STATUSES.map((x, i) => (
+                <OptionCard key={x} size="chip" selected={lpdp === x} tabbable={lpdp === x || (lpdp === null && i === 0)} onSelect={() => setLpdp(lpdp === x ? null : x)} title={LPDP_LABEL[x]} />
+              ))}
+            </div>
+            </>)}
+            <p id="english-label" className="mb-2 mt-5 text-sm font-extrabold">Have you taken an English test?</p>
+            <div role="radiogroup" aria-labelledby="english-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+              {ENGLISH_STATUSES.map((x, i) => (
+                <OptionCard key={x} size="chip" selected={english === x} tabbable={english === x || (english === null && i === 0)} onSelect={() => setEnglish(english === x ? null : x)} title={ENGLISH_LABEL[x]} />
+              ))}
+            </div>
           </fieldset>
         )}
 
@@ -266,6 +297,12 @@ export function OnboardingWizard() {
             <div role="radiogroup" aria-label="Your stage" className="grid gap-3" onKeyDown={(e) => onGroupKeyDown(e, true)}>
               {STAGE_OPTIONS.map((s) => (
                 <OptionCard key={s.id} selected={stage === s.id} tabbable={radioTab<Stage>(s.id, stage, 'exploring')} onSelect={() => setStage(s.id)} title={s.title} subtitle={s.subtitle} icon={s.icon} />
+              ))}
+            </div>
+            <p id="worry-label" className="mb-2 mt-5 text-sm font-extrabold">What worries you most? (optional)</p>
+            <div role="radiogroup" aria-labelledby="worry-label" className="flex flex-wrap gap-2" onKeyDown={(e) => onGroupKeyDown(e, true)}>
+              {WORRIES.map((x, i) => (
+                <OptionCard key={x} size="chip" selected={worry === x} tabbable={worry === x || (worry === null && i === 0)} onSelect={() => setWorry(worry === x ? null : x)} title={WORRY_LABEL[x]} />
               ))}
             </div>
           </fieldset>

@@ -6,7 +6,7 @@ import { useToast } from '@/components/toast';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { loadOnboarding, saveOnboarding } from '@/components/onboarding/data';
 import {
-  STATUS_FOR_TRACK, STATUS_LABEL, parseAbout, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, PROGRAMS, PROGRAM_LABEL, STAGES,
+  STATUS_FOR_TRACK, STATUS_LABEL, parseAbout, FUNDINGS, FUNDING_LABEL, LPDP_STATUSES, LPDP_LABEL, ENGLISH_STATUSES, ENGLISH_LABEL, WORRIES, WORRY_LABEL, DESTINATIONS, DESTINATION_LABEL, FIELDS, FIELD_LABEL, PROGRAMS, PROGRAM_LABEL, STAGES,
   intakeOptions, type About, type Destination, type Field, type Onboarding, type Program, type Stage, type Track,
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
@@ -104,6 +104,21 @@ export function PlanSection() {
             className="mt-1 block min-h-11 w-full rounded-xl border-2 bg-bg px-3 text-sm font-normal" />
         </label>
       </div>
+
+      <Row label="How will you pay for your studies?">
+        {FUNDINGS.map((f) => <Chip key={f} on={ob.about?.funding === f} onClick={() => setAbout({ funding: ob.about?.funding === f ? undefined : f })}>{FUNDING_LABEL[f]}</Chip>)}
+      </Row>
+      {ob.about?.funding === 'lpdp' && (
+        <Row label="Where are you with LPDP?">
+          {LPDP_STATUSES.map((l) => <Chip key={l} on={ob.about?.lpdp === l} onClick={() => setAbout({ lpdp: ob.about?.lpdp === l ? undefined : l })}>{LPDP_LABEL[l]}</Chip>)}
+        </Row>
+      )}
+      <Row label="Have you taken an English test?">
+        {ENGLISH_STATUSES.map((x) => <Chip key={x} on={ob.about?.english === x} onClick={() => setAbout({ english: ob.about?.english === x ? undefined : x })}>{ENGLISH_LABEL[x]}</Chip>)}
+      </Row>
+      <Row label="What worries you most?">
+        {WORRIES.map((w) => <Chip key={w} on={ob.about?.worry === w} onClick={() => setAbout({ worry: ob.about?.worry === w ? undefined : w })}>{WORRY_LABEL[w]}</Chip>)}
+      </Row>
 
       {ob.track === 'grad' && (
         <Row label="Programs" hint="Pick one or more. The first one is your main choice.">

@@ -29,7 +29,7 @@ export const EMPTY_JOURNEY_DATA: JourneyData = {
   decide: { checklistStarted: 0, submitted: 0, decisionsRecorded: 0, offersCompared: 0 },
 };
 
-export type JourneyProfile = { track: Track; program?: Program; stage: Stage };
+export type JourneyProfile = { track: Track; program?: Program; stage: Stage; english?: 'taken' | 'booked' | 'not_yet' };
 export const DEFAULT_JOURNEY_PROFILE: JourneyProfile = { track: 'grad', stage: 'exploring' };
 
 type LessonDef = { id: string; title: string; hint: string; href: string; measure: (d: JourneyData) => { current: number; target: number } };
@@ -100,7 +100,11 @@ export function buildUnits(p: JourneyProfile = DEFAULT_JOURNEY_PROFILE, data: Jo
   return [
     { id: 'about-you', title: 'About you', blurb: 'A few basics so we can help.', color: 'green', lessons: [
       { id: 'add-education', title: 'Add your education', hint: p.track === 'undergrad' ? 'Your high school is enough to start.' : 'Your degree and university is enough to start.', href: '/profile', measure: (d) => atLeast(d.profile.education, 1) },
-      { id: 'add-test', title: 'Add a test score', hint: c.tests, href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) },
+      p.english === 'not_yet'
+        ? { id: 'add-test', title: 'Book your English test', hint: 'IELTS, TOEFL or Duolingo. Most schools need one. Add your score in Profile once you have it.', href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) }
+        : p.english === 'booked'
+          ? { id: 'add-test', title: 'Add your English score after the test', hint: 'You booked it, nice. Add it in Profile as a planned test now, then the score later.', href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) }
+          : { id: 'add-test', title: 'Add a test score', hint: c.tests, href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) },
     ] },
     { id: 'pick-schools', title: 'Pick schools', blurb: 'A short list beats a perfect one.', color: 'blue', lessons: [
       { id: 'add-schools', title: 'Add 3 schools to your list', hint: c.schoolsHint, href: '/schools', measure: (d) => atLeast(d.schools.inPortfolio, 3) },

@@ -8,7 +8,14 @@ export type Field = 'business' | 'cs' | 'engineering' | 'econ-finance' | 'data-s
 export type Stage = 'exploring' | 'shortlisting' | 'applying' | 'submitted';
 export type CurrentStatus = 'sma_10_11' | 'sma_12' | 'gap_year' | 'uni_student' | 'uni_final' | 'working' | 'masters' | 'other';
 /** Optional "About you" answers: what the student does now, where they study or studied, and where they live. */
-export type About = { status?: CurrentStatus; school?: string; city?: string };
+export type Funding = 'lpdp' | 'gov' | 'family' | 'savings' | 'need' | 'unsure';
+export type LpdpStatus = 'planning' | 'applied' | 'awarded';
+export type EnglishStatus = 'taken' | 'booked' | 'not_yet';
+export type Worry = 'schools' | 'essays' | 'tests' | 'money' | 'deadlines' | 'none';
+export type About = {
+  status?: CurrentStatus; school?: string; city?: string;
+  funding?: Funding; lpdp?: LpdpStatus; english?: EnglishStatus; worry?: Worry;
+};
 
 export type Onboarding = {
   done: boolean;
@@ -39,6 +46,18 @@ export const STATUS_FOR_TRACK: Record<Track, readonly CurrentStatus[]> = {
   undergrad: ['sma_10_11', 'sma_12', 'gap_year', 'uni_student', 'other'],
   grad: ['uni_final', 'working', 'masters', 'other'],
 };
+export const FUNDINGS: readonly Funding[] = ['lpdp', 'gov', 'family', 'savings', 'need', 'unsure'];
+export const FUNDING_LABEL: Record<Funding, string> = {
+  lpdp: 'LPDP', gov: 'Another government scholarship', family: 'Parents or family', savings: 'My own savings', need: 'I need a scholarship', unsure: 'Not sure yet',
+};
+export const LPDP_STATUSES: readonly LpdpStatus[] = ['planning', 'applied', 'awarded'];
+export const LPDP_LABEL: Record<LpdpStatus, string> = { planning: 'Planning to apply', applied: 'Applied, waiting', awarded: 'Already awarded' };
+export const ENGLISH_STATUSES: readonly EnglishStatus[] = ['taken', 'booked', 'not_yet'];
+export const ENGLISH_LABEL: Record<EnglishStatus, string> = { taken: 'Yes, I have a score', booked: 'Booked a test date', not_yet: 'Not yet' };
+export const WORRIES: readonly Worry[] = ['schools', 'essays', 'tests', 'money', 'deadlines', 'none'];
+export const WORRY_LABEL: Record<Worry, string> = {
+  schools: 'Choosing schools', essays: 'Essays', tests: 'Tests', money: 'Money', deadlines: 'Deadlines', none: 'Nothing yet',
+};
 const ABOUT_MAX = 120;
 /** Cleans the optional About answers; returns undefined when nothing useful is left. */
 export function parseAbout(v: unknown): About | undefined {
@@ -46,7 +65,14 @@ export function parseAbout(v: unknown): About | undefined {
   const r = v as Record<string, unknown>;
   const text = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, ABOUT_MAX) : undefined);
   const status = typeof r.status === 'string' && (STATUSES as readonly string[]).includes(r.status) ? (r.status as CurrentStatus) : undefined;
-  const out: About = { ...(status ? { status } : {}), ...(text(r.school) ? { school: text(r.school) } : {}), ...(text(r.city) ? { city: text(r.city) } : {}) };
+  const pick = <T extends string>(list: readonly T[], x: unknown): T | undefined => (typeof x === 'string' && (list as readonly string[]).includes(x) ? (x as T) : undefined);
+  const funding = pick(FUNDINGS, r.funding);
+  const lpdp = funding === 'lpdp' ? pick(LPDP_STATUSES, r.lpdp) : undefined; // only meaningful with LPDP funding
+  const english = pick(ENGLISH_STATUSES, r.english), worry = pick(WORRIES, r.worry);
+  const out: About = {
+    ...(status ? { status } : {}), ...(text(r.school) ? { school: text(r.school) } : {}), ...(text(r.city) ? { city: text(r.city) } : {}),
+    ...(funding ? { funding } : {}), ...(lpdp ? { lpdp } : {}), ...(english ? { english } : {}), ...(worry ? { worry } : {}),
+  };
   return Object.keys(out).length ? out : undefined;
 }
 export const REMINDER_HOURS = [8, 12, 19] as const;
