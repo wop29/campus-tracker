@@ -1,6 +1,6 @@
 {
-  "name": "Campus Quest",
-  "short_name": "Campus Quest",
+  "name": "Campus Tracker",
+  "short_name": "Campus Tracker",
   "description": "Find universities and keep every application on track",
   "start_url": "/",
   "scope": "/",

@@ -154,3 +154,14 @@ export function essaySubtitle(schoolName: string | null | undefined, app: { scho
   const details = app ? [app.program, app.intake, app.round].map((x) => (x ?? '').trim()).filter(Boolean).join(', ') : '';
   return [school, details].filter(Boolean).join(' · ') || 'No school linked';
 }
+
+/** What the essay form says about the deadline. Essay deadlines come from the linked application, never typed by hand.
+ *  undefined = no application linked; null = application has no deadline yet. */
+export function essayDeadlineNote(appDue: string | null | undefined, now: Date = new Date()): string {
+  if (appDue === undefined) return 'Link an application and the deadline will come from its real round date.';
+  if (appDue === null) return "This application has no deadline yet. Pick its round on the Applications page and the date shows up here.";
+  const d = new Date(appDue);
+  const days = Math.ceil((d.getTime() - now.getTime()) / 86_400_000);
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return days < 0 ? `Due with your application on ${date} (passed).` : `Due with your application on ${date} (${days} day${days === 1 ? '' : 's'} left).`;
+}

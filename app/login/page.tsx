@@ -31,7 +31,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-4 md:flex-row md:gap-14">
       <ThemeLoader fromDb={false} />
       <div className="max-w-sm text-center md:text-left">
-        <div className="flex justify-center md:justify-start"><Mascot pose="wave" size={150} alt="Mochi, the Campus Quest mascot, waving hello" priority animate /></div>
+        <div className="flex justify-center md:justify-start"><Mascot pose="wave" size={150} alt="Mochi, the Campus Tracker mascot, waving hello" priority animate /></div>
         <p className="mt-3 text-3xl font-extrabold tracking-tight text-ink">Your path to university, one small win at a time.</p>
         <p className="mt-2 text-sm text-secondary">Track schools, essays and deadlines in one friendly place.</p>
       </div>

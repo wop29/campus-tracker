@@ -8,8 +8,8 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { must, useQuery } from '@/lib/hooks';
 import { cn } from '@/lib/utils';
 import { countWords, wordLimitState } from '@/lib/logic/text';
-import { ESSAY_STATUSES, ESSAY_STATUS_LABEL, draftChanged, essayFormSchema, essaySubtitle, statusAfterSave, fieldErrors, type EssayRow, type EssayStatus, type EssayVersionRow } from '@/lib/essays';
-import { appLabel, errMsg, useSchoolsApps } from './data';
+import { ESSAY_STATUSES, ESSAY_STATUS_LABEL, draftChanged, essayDeadlineNote, essayFormSchema, essaySubtitle, statusAfterSave, fieldErrors, type EssayRow, type EssayStatus, type EssayVersionRow } from '@/lib/essays';
+import { appDeadline, appLabel, errMsg, useSchoolsApps } from './data';
 import { AiEvalPanel } from './AiEvalPanel';
 import { StoryLinker } from './StoryLinker';
 import { VersionHistory } from './VersionHistory';
@@ -70,7 +70,7 @@ export function EssayEditor({ essayId }: { essayId: string }) {
     setDetailErrors({}); setSavingDetails(true);
     try {
       const d = p.data;
-      await must(supabaseBrowser().from('essays').update({ title: d.title, school_id: d.school_id ?? null, application_id: d.application_id ?? null, prompt: d.prompt || null, word_limit: d.word_limit ?? null, deadline: d.deadline ? new Date(`${d.deadline}T23:59:00`).toISOString() : null }).eq('id', essay.id));
+      await must(supabaseBrowser().from('essays').update({ title: d.title, school_id: d.school_id ?? null, application_id: d.application_id ?? null, prompt: d.prompt || null, word_limit: d.word_limit ?? null }).eq('id', essay.id));
       toast('Details saved'); await essayQ.reload();
     } catch (err) { toast(errMsg(err), 'err'); } finally { setSavingDetails(false); }
   }
@@ -120,7 +120,10 @@ export function EssayEditor({ essayId }: { essayId: string }) {
               <Field label="Original prompt" error={detailErrors.prompt}><Textarea rows={4} value={details.prompt} onChange={(e) => setDetails({ ...details, prompt: e.target.value })} /></Field>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Word limit" error={detailErrors.word_limit}><Input inputMode="numeric" value={details.word_limit} onChange={(e) => setDetails({ ...details, word_limit: e.target.value })} /></Field>
-                <Field label="Deadline" error={detailErrors.deadline}><Input type="date" value={details.deadline} onChange={(e) => setDetails({ ...details, deadline: e.target.value })} /></Field>
+<div className="rounded-xl border-2 bg-bg p-3 text-sm">
+            <p className="font-semibold">Deadline</p>
+            <p className="mt-0.5 text-secondary">{essayDeadlineNote(details.application_id ? appDeadline(apps.find((a) => a.id === details.application_id)) : undefined)}</p>
+          </div>
               </div>
               <Button type="submit" disabled={savingDetails}>{savingDetails ? 'Saving...' : 'Save details'}</Button>
             </form>

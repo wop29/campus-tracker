@@ -163,7 +163,6 @@ export function reqAction(r: CheckReq, essay?: EssayLite | null): ReqAction {
     if (r.essay_id) return { kind: 'link', label: essay && essay.words > 0 ? 'Continue writing' : 'Start essay', href: `/essays/${r.essay_id}` };
     return { kind: 'link', label: 'Open essays', href: '/essays' };
   }
-  if (r.category === 'recommendations') return { kind: 'link', label: r.recommendation_id ? 'See recommenders' : 'Add recommender', href: '/recommendations' };
   if (r.category === 'tests') return { kind: 'link', label: 'Add score', href: '/profile?tab=tests' };
   return { kind: 'done', label: /\bfee\b/i.test(r.name) ? 'Mark as paid' : 'Mark as done' };
 }

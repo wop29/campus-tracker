@@ -5,7 +5,8 @@ import { useToast } from '@/components/toast';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { must } from '@/lib/hooks';
 import { essayFormSchema, fieldErrors, type EssayRow } from '@/lib/essays';
-import { appLabel, errMsg, type AppLite, type SchoolLite } from './data';
+import { appDeadline, appLabel, errMsg, type AppLite, type SchoolLite } from './data';
+import { essayDeadlineNote } from '@/lib/essays';
 
 /** Creates an essay, or (when `source` is given) duplicates one for another school: draft and prompt are copied and duplicated_from is set. */
 export function EssayFormModal({ open, onClose, schools, apps, source, onDone }: { open: boolean; onClose: () => void; schools: SchoolLite[]; apps: AppLite[]; source?: EssayRow | null; onDone: (id: string) => void }) {
@@ -26,7 +27,6 @@ export function EssayFormModal({ open, onClose, schools, apps, source, onDone }:
       const d = parsed.data; const sb = supabaseBrowser();
       const row = await must(sb.from('essays').insert({
         title: d.title, school_id: d.school_id ?? null, application_id: d.application_id ?? null, prompt: d.prompt || null, word_limit: d.word_limit ?? null,
-        deadline: d.deadline ? new Date(`${d.deadline}T23:59:00`).toISOString() : null,
         ...(source ? { draft: source.draft, duplicated_from: source.id, change_notes: `Duplicated from "${source.title}"`, status: 'first_draft' as const } : {}),
       }).select('id').single());
       toast(source ? 'Essay duplicated' : 'Essay created'); onDone((row as { id: string }).id);
@@ -52,7 +52,10 @@ export function EssayFormModal({ open, onClose, schools, apps, source, onDone }:
         <Field label="Original prompt" error={errors.prompt} hint="Paste the exact prompt from the school."><Textarea value={v.prompt} onChange={(e) => set('prompt', e.target.value)} rows={4} /></Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Word limit" error={errors.word_limit}><Input inputMode="numeric" value={v.word_limit} onChange={(e) => set('word_limit', e.target.value)} placeholder="e.g. 500" /></Field>
-          <Field label="Deadline" error={errors.deadline}><Input type="date" value={v.deadline} onChange={(e) => set('deadline', e.target.value)} /></Field>
+<div className="rounded-xl border-2 bg-bg p-3 text-sm">
+            <p className="font-semibold">Deadline</p>
+            <p className="mt-0.5 text-secondary">{essayDeadlineNote(v.application_id ? appDeadline(apps.find((a) => a.id === v.application_id)) : undefined)}</p>
+          </div>
         </div>
         <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Saving...' : source ? 'Duplicate' : 'Create essay'}</Button></div>
       </form>

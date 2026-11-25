@@ -1,5 +1,5 @@
 /** The product name shown to users. */
-export const APP_NAME = 'Campus Quest';
+export const APP_NAME = 'Campus Tracker';
 export const APP_TAGLINE = 'Find universities and keep every application on track';
 /** AI Coach and Interview Practice are switched off for now (pages redirect, nothing links to them). Flip to bring their prompts back. */
 export const COACH_AND_INTERVIEW_ENABLED = false;
@@ -37,6 +37,5 @@ export const NAV = [
   { href: '/applications', label: 'Applications', icon: 'Kanban' },
   { href: '/scholarships', label: 'Scholarships', icon: 'Award' },
   { href: '/essays', label: 'Essays', icon: 'FileText' },
-  { href: '/recommendations', label: 'Recommenders', icon: 'Users' },
   { href: '/settings', label: 'Settings', icon: 'Settings' },
 ] as const;

@@ -41,14 +41,14 @@ function copyFor(p: JourneyProfile) {
     tests: 'SAT, ACT, IELTS or TOEFL. A practice score is fine for now.',
     schoolsHint: 'Universities you would be happy at. You can change them anytime.',
     essay: 'personal statement', essayHint: 'Start your personal statement. Paste the prompt if you have it.',
-    recommender: 'Add a teacher or counselor', recHint: 'Someone at school who knows you well.',
+    recommender: 'Line up your teacher letter', recHint: 'Letters, documents and the fee count too. Ask your teacher or counselor for the letter early.',
   };
   const mba = p.program === 'mba';
   return {
     tests: mba ? 'GMAT, GRE, IELTS or TOEFL. A practice score is fine for now.' : 'GRE, IELTS or TOEFL. A practice score is fine for now.',
     schoolsHint: mba ? 'Business schools you would be happy at. You can change them anytime.' : 'Programs you would be happy at. You can change them anytime.',
     essay: mba ? 'essay' : 'statement of purpose', essayHint: mba ? 'Start one essay. Paste the prompt and the word limit.' : 'Start your statement of purpose. Paste the prompt if you have it.',
-    recommender: 'Add a recommender', recHint: mba ? 'A manager or mentor who knows your work well.' : 'A professor or manager who knows your work well.',
+    recommender: 'Line up your recommendation letters', recHint: mba ? 'Letters, essays and the fee count too. Ask your recommenders at least a month ahead.' : 'Letters, documents and the fee count too. Ask your professor or manager early.',
   };
 }
 
@@ -119,7 +119,7 @@ export function buildUnits(p: JourneyProfile = DEFAULT_JOURNEY_PROFILE, data: Jo
       { id: 'first-draft', title: 'Save a first draft', hint: 'A messy draft is perfect. You can polish later.', href: '/essays', measure: (d) => atLeast(d.essays.withDraft, 1) },
     ] },
     { id: 'finish', title: 'Finish', blurb: 'The finish line.', color: 'purple', lessons: [
-      { id: 'add-recommender', title: c.recommender, hint: c.recHint, href: '/recommendations', measure: (d) => atLeast(d.recs.recommenders, 1) },
+      { id: 'finish-checklist', title: 'Tick off every item for one application', hint: c.recHint, href: '/applications', measure: (d) => atLeast(Math.max(d.applications.requirementsComplete, d.decide.submitted), 1) },
       { id: 'submit-app', title: 'Submit an application', hint: 'Mark it submitted once you hit send. You did it!', href: '/applications', measure: (d) => atLeast(d.decide.submitted, 1) },
     ] },
   ];

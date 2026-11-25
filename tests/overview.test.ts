@@ -43,9 +43,8 @@ test('nba: recommender pending within 21 days, none beyond', () => {
   d.deadlines[0].due_at = inDays(40); assert.ok(!keys(gen(d)).includes('rec-pending:rc1'));
   d.deadlines[0].due_at = inDays(10); d.recommendations[0].status = 'submitted'; assert.ok(!keys(gen(d)).includes('rec-pending:rc1'));
 });
-test('nba: no recommender assigned (not for researching stage)', () => {
-  const d = base(); assert.ok(keys(gen(d)).includes('no-recommender:a1'));
-  d.applications[0].stage = 'researching'; assert.ok(!keys(gen(d)).includes('no-recommender:a1'));
+test('nba: no recommender rule is off while the Recommenders tab is hidden', () => {
+  const d = base(); assert.ok(!keys(gen(d)).includes('no-recommender:a1'));
 });
 test('nba: mandatory open on application with deadline in 30 days, ignores Submission confirmation and optional', () => {
   const d = base();
@@ -259,8 +258,6 @@ test('nba: stage "applying" raises deadline items, names the school in "Set the 
   const a = apply.find((x) => x.dedupe_key === 'no-deadline:a1')!, e = explore.find((x) => x.dedupe_key === 'no-deadline:a1')!;
   assert.equal(a.title, 'Set the deadline for Duke Fuqua');
   assert.equal(a.score - e.score, 10); assert.equal(a.score_breakdown.stage, 10); assert.equal(e.score_breakdown.stage, 0);
-  const t = (r: Recommendation[]) => r.find((x) => x.dedupe_key === 'no-recommender:a1')!.score;
-  assert.ok(t(apply) > t(explore));
 });
 test('secondary suggestions: at most 2, visible only, no repeat of the journey step, track filter', () => {
   const r = (k: string, score: number, status = 'new') => ({ dedupe_key: k, score, status, snoozed_until: null });

@@ -109,7 +109,7 @@ test('journey: grad and undergrad wording differ', () => {
   const by = (ls: typeof grad, id: string) => ls.find((l) => l.id === id)!;
   assert.match(by(grad, 'add-test').hint, /GMAT/); assert.doesNotMatch(by(masters, 'add-test').hint, /GMAT/);
   assert.match(by(ug, 'add-test').hint, /SAT/); assert.match(by(ug, 'create-essay').title, /personal statement/);
-  assert.match(by(masters, 'create-essay').title, /statement of purpose/); assert.match(by(ug, 'add-recommender').title, /teacher or counselor/);
+  assert.match(by(masters, 'create-essay').title, /statement of purpose/); assert.match(by(ug, 'finish-checklist').hint, /teacher or counselor/);
   assert.deepEqual(grad.map((l) => l.id), ug.map((l) => l.id));
 });
 test('journey: exploring and shortlisting skip nothing', () => {
@@ -136,7 +136,7 @@ test('journey: applying counts early lessons that are already done', () => {
 });
 test('journey: submitted starts at Finish', () => {
   const j = computeJourney(EMPTY_JOURNEY_DATA, { track: 'grad', stage: 'submitted' });
-  assert.equal(j.currentUnitId, 'finish'); assert.equal(j.currentLessonId, 'add-recommender'); assert.equal(j.total, 2); assert.equal(j.skipped, 8);
+  assert.equal(j.currentUnitId, 'finish'); assert.equal(j.currentLessonId, 'finish-checklist'); assert.equal(j.total, 2); assert.equal(j.skipped, 8);
   const done = computeJourney(d({ recs: { ...EMPTY_JOURNEY_DATA.recs, recommenders: 1 }, decide: { ...EMPTY_JOURNEY_DATA.decide, submitted: 2 } }), { track: 'grad', stage: 'submitted' });
   assert.equal(done.overallPct, 100); assert.equal(done.currentLessonId, null); assert.equal(done.step, 2);
 });

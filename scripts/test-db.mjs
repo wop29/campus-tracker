@@ -405,6 +405,24 @@ await test('028: new test types and planned tests (no date, no score); bad value
   ok((await as(B, `update public.test_scores set status='taken' where id=$1`, [p.id])).affectedRows === 0, 'B could edit A test');
 });
 
+await test('030: essay deadline follows its application deadline, cannot be typed, RLS kept', async () => {
+  const app = (await as(A, `insert into public.applications(school_id, round, program) values ($1,'Round 1','Essay test MSc') returning id`, [schoolA])).rows[0].id;
+  const e = (await as(A, `insert into public.essays(application_id,title,deadline) values ($1,'Why us','2030-01-01') returning id, deadline`, [app])).rows[0];
+  ok(e.deadline === null, 'no app deadline yet, so typed date is ignored');
+  await as(A, `insert into public.deadlines(application_id, due_at, is_primary) values ($1,'2027-01-05T23:59:00Z',true)`, [app]);
+  let d = (await as(A, `select deadline from public.essays where id=$1`, [e.id])).rows[0].deadline;
+  ok(d && new Date(d).toISOString() === '2027-01-05T23:59:00.000Z', 'synced from application deadline');
+  await as(A, `update public.deadlines set due_at='2027-02-01T23:59:00Z' where application_id=$1`, [app]);
+  d = (await as(A, `select deadline from public.essays where id=$1`, [e.id])).rows[0].deadline;
+  ok(new Date(d).toISOString() === '2027-02-01T23:59:00.000Z', 'follows a moved deadline');
+  await as(A, `update public.essays set deadline='2031-01-01' where id=$1`, [e.id]);
+  d = (await as(A, `select deadline from public.essays where id=$1`, [e.id])).rows[0].deadline;
+  ok(new Date(d).toISOString() === '2027-02-01T23:59:00.000Z', 'manual edits are overwritten');
+  const free = (await as(A, `insert into public.essays(title,deadline) values ('Unlinked','2030-01-01') returning deadline`)).rows[0].deadline;
+  ok(free !== null, 'unlinked essays keep their value');
+  const b = await as(B, `select count(*)::int n from public.essays where id=$1`, [e.id]); ok(b.rows[0].n === 0, 'B cannot see A essay');
+});
+
 console.table(results.map(([n, s, e]) => ({ test: n, result: s, detail: e || '' })));
 const failed = results.filter((r) => r[1] === 'FAIL').length;
 console.log(`${results.length - failed}/${results.length} passed`);

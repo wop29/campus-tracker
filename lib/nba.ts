@@ -15,6 +15,7 @@
  * Priority: score >= 55 high, >= 30 medium, else low.
  * Effort minutes are planning estimates (constants below), not measured values, and are shown as estimates.
  */
+import { RECOMMENDERS_ENABLED } from './features.ts';
 import { COACH_AND_INTERVIEW_ENABLED } from './constants.ts';
 import { countWords } from './logic/text.ts';
 import { daysUntil, timeRemaining } from './logic/risk.ts';
@@ -113,7 +114,7 @@ export function generateRecommendations(input: NbaInput): Recommendation[] {
     });
   }
   // Rule: no_recommender. Application past research with no recommender assigned.
-  for (const app of activeApps) {
+  for (const app of RECOMMENDERS_ENABLED ? activeApps : []) {
     if (app.stage === 'researching' || input.recommendations.some((r) => r.application_id === app.id)) continue;
     const sn = schoolName(app.school_id);
     add('no_recommender', {
@@ -303,7 +304,6 @@ const SAME_AS_STEP: Record<string, (key: string) => boolean> = {
   'set-deadline': (k) => k.startsWith('no-deadline:'),
   'create-essay': (k) => k.startsWith('essay-start:'),
   'first-draft': (k) => k.startsWith('essay-start:'),
-  'add-recommender': (k) => k.startsWith('no-recommender:'),
 };
 /** Rule keys that only make sense for grad applicants; filtered out of stored rows for undergrads (older rows may exist). */
 const GRAD_ONLY_KEY = /^(profile-test|profile-work|profile-impact:)/;

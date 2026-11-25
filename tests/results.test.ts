@@ -133,7 +133,7 @@ test('row status, detail and the one action', () => {
   assert.deepEqual(reqAction(req('Essay 1', { category: 'essays', essay_id: 'e1' }), draft), { kind: 'link', label: 'Continue writing', href: '/essays/e1' });
   assert.deepEqual(reqAction(req('Essay 2', { category: 'essays', essay_id: 'e2' }), blank), { kind: 'link', label: 'Start essay', href: '/essays/e2' });
   assert.deepEqual(reqAction(req('Essay 3', { category: 'essays' })), { kind: 'link', label: 'Open essays', href: '/essays' });
-  assert.deepEqual(reqAction(req('Recommendation 1', { category: 'recommendations' })), { kind: 'link', label: 'Add recommender', href: '/recommendations' });
+  assert.deepEqual(reqAction(req('Recommendation 1', { category: 'recommendations' })), { kind: 'done', label: 'Mark as done' });
   assert.deepEqual(reqAction(req('GMAT/GRE', { category: 'tests' })), { kind: 'link', label: 'Add score', href: '/profile?tab=tests' });
   assert.deepEqual(reqAction(req('Application fee')), { kind: 'done', label: 'Mark as paid' });
   assert.deepEqual(reqAction(req('Resume', { category: 'resume' })), { kind: 'done', label: 'Mark as done' });

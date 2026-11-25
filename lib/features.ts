@@ -19,3 +19,6 @@ export function aiServerEnabled(): boolean {
 
 /** What a student sees if they somehow reach an AI action while AI is off or not set up. */
 export const AI_OFF_MESSAGE = 'AI feedback is coming soon. Everything else in the app works as usual.';
+
+/** The Recommenders tab is hidden: recommendation letters are tracked as plain checklist items on each application. */
+export const RECOMMENDERS_ENABLED = false;

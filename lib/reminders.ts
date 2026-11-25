@@ -1,4 +1,4 @@
-// Email reminders for Campus Quest: pure logic only (no database, no network, no secrets), so it runs in tests,
+// Email reminders for Campus Tracker: pure logic only (no database, no network, no secrets), so it runs in tests,
 // on the server (app/api/cron/daily-reminders) and in the browser (the Settings preview).
 //
 // The idea: emails should feel fun, encouraging and calm. Never nagging. So there is no "one email every day".
@@ -18,7 +18,7 @@ import { checklistProgress } from './results.ts';
 import { EMAIL_STICKER_ALT, emailStickerFor } from './art.ts';
 import { parseOnboarding, DEFAULT_REMINDER_HOUR, DEFAULT_TIMEZONE, type Onboarding } from './onboarding.ts';
 
-export const PRODUCT_NAME = 'Campus Quest';
+export const PRODUCT_NAME = 'Campus Tracker';
 
 // ---------------------------------------------------------------------------------------------------------------
 // The one promise about email. Settings and Notifications show exactly these lines, so the app never disagrees with itself.

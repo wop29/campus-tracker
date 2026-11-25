@@ -28,14 +28,21 @@ export function PersonalTab({ data, ver, reload }: TabProps) {
 }
 
 // ---------- education ----------
+const opts = (xs: readonly string[]) => xs.map((x) => ({ value: x, label: x }));
+const SCHOOL_LEVELS = ['SMA', 'SMK', 'MA (Madrasah Aliyah)', 'IB Diploma', 'Cambridge A Levels', 'Cambridge IGCSE', 'US High School Diploma', 'Paket C', 'Other'] as const;
+const DEGREE_LEVELS = ["Diploma (D3/D4)", "Bachelor's (S1)", "Master's (S2)", 'Doctorate (S3)', 'Professional certificate', 'Other'] as const;
+const SCHOOL_STREAMS = ['IPA (Science)', 'IPS (Social Studies)', 'Bahasa (Language)', 'Kurikulum Merdeka (no stream)', 'SMK vocational program', 'IB or A Level subjects', 'Other'] as const;
+/** Indonesia first, then the most common places Indonesian students study, then Other. */
+const EDU_COUNTRIES = ['Indonesia', 'Singapore', 'Malaysia', 'Australia', 'United States', 'United Kingdom', 'Canada', 'Netherlands', 'Germany', 'Japan', 'South Korea', 'China', 'Hong Kong', 'Taiwan', 'Thailand', 'Philippines', 'India', 'New Zealand', 'France', 'Other'] as const;
 const STATUS_OPTS = [{ value: 'current', label: 'Currently studying' }, { value: 'completed', label: 'Completed' }, { value: 'incomplete', label: 'Did not finish' }];
 const STATUS_TEXT: Record<string, string> = Object.fromEntries(STATUS_OPTS.map((o) => [o.value, o.label]));
 function eduFields(track: ProfileData['track']): FDef[] {
   const ug = track === 'undergrad';
   return [
     { name: 'institution', label: ug ? 'School' : 'Institution', type: 'text', required: true, placeholder: ug ? 'e.g. SMA Negeri 3 Bandung' : undefined },
-    { name: 'degree', label: ug ? 'Level' : 'Degree', type: 'text', placeholder: ug ? 'e.g. SMA, SMK, IB Diploma, A Levels' : 'e.g. Bachelor of Science' },
-    { name: 'major', label: ug ? 'Stream or focus' : 'Major / field', type: 'text', placeholder: ug ? 'e.g. IPA (science), IPS (social studies)' : undefined }, { name: 'country', label: 'Country', type: 'text' },
+    { name: 'degree', label: ug ? 'Level' : 'Degree', type: 'select', options: opts(ug ? SCHOOL_LEVELS : DEGREE_LEVELS) },
+    ug ? { name: 'major', label: 'Stream or focus', type: 'select', options: opts(SCHOOL_STREAMS) } : { name: 'major', label: 'Major / field', type: 'text', placeholder: 'e.g. Civil Engineering' },
+    { name: 'country', label: 'Country', type: 'select', options: opts(EDU_COUNTRIES) },
     { name: 'enrollment_status', label: 'Status', type: 'select', required: true, options: STATUS_OPTS },
     { name: 'graduation_date', label: 'Graduation (or expected)', type: 'month', years: [YEAR - 40, YEAR + 8] },
     { name: 'gpa', label: ug ? 'Grade average' : 'GPA', type: 'number', step: '0.01', hint: ug ? 'Indonesian high school? Use your rapor average so far, for example 88.5.' : undefined },
@@ -46,7 +53,7 @@ function eduFields(track: ProfileData['track']): FDef[] {
 export function EducationTab({ data, ver, reload }: TabProps) {
   const ug = data.track === 'undergrad';
   return <RecordCrud table="education_records" section="education" title="Education" noun="Education" rows={data.education} fields={eduFields(data.track)} schema={EducationSchema} ver={ver} reload={reload}
-    initial={ug ? { enrollment_status: 'current', gpa_scale: '100' } : { enrollment_status: 'completed', gpa_scale: '4' }}
+    initial={ug ? { enrollment_status: 'current', gpa_scale: '100', country: 'Indonesia' } : { enrollment_status: 'completed', gpa_scale: '4', country: 'Indonesia' }}
     emptyHint={ug ? 'Start with your high school. Your rapor average is enough for now.' : 'Add each degree or program you attended, including incomplete or current ones.'}
     summary={(r) => (<div className="space-y-0.5"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{r.institution}</span><Badge tone={r.enrollment_status === 'completed' ? 'success' : 'neutral'}>{STATUS_TEXT[r.enrollment_status] ?? titleCase(r.enrollment_status)}</Badge></div>
       <T>{[r.degree, r.major, r.country].filter(Boolean).join(', ') || (ug ? 'No level or stream yet' : 'No degree details yet')}</T>
