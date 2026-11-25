@@ -35,6 +35,7 @@ export const NAV = [
   { href: '/profile', label: 'My Profile', icon: 'User' },
   { href: '/schools', label: 'Find universities', icon: 'GraduationCap' },
   { href: '/applications', label: 'Applications', icon: 'Kanban' },
+  { href: '/scholarships', label: 'Scholarships', icon: 'Award' },
   { href: '/essays', label: 'Essays', icon: 'FileText' },
   { href: '/recommendations', label: 'Recommenders', icon: 'Users' },
   { href: '/settings', label: 'Settings', icon: 'Settings' },
