@@ -345,3 +345,31 @@ export function bestProgramMatch<P extends { id: string; program_name: string }>
   const loose = programs.filter((p) => progKey(p.program_name) === k);
   return loose.length === 1 ? loose[0] : null;
 }
+
+/** A researched program's round data, used for applications that are not linked to a program yet. */
+export type RoundSource = { id: string; school_name: string; program_name: string; degree_type: string | null; format: string | null; decision_dates: unknown; deadlines_info?: unknown };
+
+/** Programs that are a school's regular full-time MBA, not a joint degree, a one-year variant, a deferred track or a part-time format. */
+const NOT_FLAGSHIP = /\b(joint|dual|jd|md|mpp|mpa|mpa-id|ms|ma|msx|dmd|sm|j-term|january|deferred|scholars|accelerated|early|executive|emba|part-time|evening|weekend|online|lgo|1\+1|2\+2)\b|\//i;
+/**
+ * For an application that is not linked to a researched program: the program to read round dates from. The best name match,
+ * else the school's only regular full-time MBA, else null. We never guess between several.
+ */
+export function programForRounds<P extends { id: string; program_name: string; degree_type?: string | null; format?: string | null }>(appProgram: string | null | undefined, programs: P[]): P | null {
+  const named = bestProgramMatch(appProgram ?? '', programs);
+  if (named) return named;
+  const flagship = programs.filter((p) => (p.degree_type ?? 'mba') === 'mba' && p.format === 'full-time' && !NOT_FLAGSHIP.test(p.program_name));
+  return flagship.length === 1 ? flagship[0] : null;
+}
+
+/** Round data for an application with no program link: the best match among its school's researched programs, else null. */
+export function unlinkedRoundInfo(
+  row: { program: string | null; program_requirement_id?: string | null; school?: { name: string; short_name: string | null } | null },
+  sources: RoundSource[],
+): { decision_dates: unknown; program_url: string | null; deadlines_info?: unknown } | null {
+  if (row.program_requirement_id) return null;
+  const names = [row.school?.name, row.school?.short_name].filter((n): n is string => !!n);
+  const mine = sources.filter((x) => names.includes(x.school_name));
+  const hit = mine.length ? programForRounds(row.program, mine) : null;
+  return hit ? { decision_dates: hit.decision_dates, program_url: null, deadlines_info: hit.deadlines_info } : null;
+}

@@ -503,12 +503,14 @@ const MONTH_INDEX: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, ma
 const monthOf = (m: string) => MONTH_INDEX[m.slice(0, 3).toLowerCase()];
 const DATE_RE = new RegExp(
   `\\b(?:(${MONTHS})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?!\\d)(?:,?\\s+(20\\d{2}))?|(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTHS})\\.?,?(?:\\s+(20\\d{2}))?)\\b`, 'i');
-const ROUND_LABEL = /\b(Early\s+Action|Early\s+Decision|Round\s+(?:One|Two|Three|Four|Five|\d{1,2})|R\d{1,2}|Deferred\s+Admissions?|Rolling(?:\s*\((?:International|Intl\.?)\))?)\b/gi;
-const WORD_NUM: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5' };
+const ROUND_LABEL = /\b(Early\s+Action|Early\s+Decision|Round\s+(?:One|Two|Three|Four|Five|\d{1,2})|Stage\s+(?:One|Two|Three|Four|Five|Six|\d{1,2})|R\d{1,2}|Deferred\s+Admissions?|Rolling(?:\s*\((?:International|Intl\.?)\))?)\b/gi;
+const WORD_NUM: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6' };
 function tidyLabel(l: string): string {
   const t = l.replace(/\s+/g, ' ').trim();
   const r = t.match(/^R(?:ound)?\s*(\d{1,2}|one|two|three|four|five)$/i);
   if (r) return `Round ${WORD_NUM[r[1].toLowerCase()] ?? r[1]}`;
+  const st = t.match(/^Stage\s+(\d{1,2}|one|two|three|four|five|six)$/i);
+  if (st) return `Stage ${WORD_NUM[st[1].toLowerCase()] ?? st[1]}`;
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 const ymd = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;

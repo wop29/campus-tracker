@@ -93,12 +93,12 @@ test('onboarding copy: no em dashes, no "actually", says steps not taps, no dail
 const d = (over: Partial<JourneyData> = {}): JourneyData => ({ ...EMPTY_JOURNEY_DATA, ...over });
 const ids = (j: ReturnType<typeof computeJourney>) => Object.fromEntries(j.units.flatMap((u) => u.lessons).map((l) => [l.id, l.state]));
 
-test('journey: short path, at most 5 units and about 10 lessons, no funding or interview', () => {
+test('journey: short path, at most 4 units and 8 lessons, no funding, interview or profile steps', () => {
   for (const track of ['grad', 'undergrad'] as const) {
     const units = buildUnits({ track, stage: 'exploring' });
     const lessons = units.flatMap((u) => u.lessons);
-    assert.ok(units.length <= 5); assert.ok(lessons.length >= 10 && lessons.length <= 12);
-    assert.ok(lessons.every((l) => !/scholarship|finance|interview/.test(l.href)));
+    assert.ok(units.length <= 4); assert.equal(lessons.length, 8);
+    assert.ok(lessons.every((l) => !/scholarship|finance|interview|profile/.test(l.href)));
     for (const text of lessons.flatMap((l) => [l.title, l.hint])) { assert.ok(!text.includes('—'), `no em dash: ${text}`); assert.ok(!/\bactually\b/i.test(text)); }
   }
 });
@@ -107,42 +107,42 @@ test('journey: grad and undergrad wording differ', () => {
   const masters = buildUnits({ track: 'grad', program: 'masters', stage: 'exploring' }).flatMap((u) => u.lessons);
   const ug = buildUnits({ track: 'undergrad', stage: 'exploring' }).flatMap((u) => u.lessons);
   const by = (ls: typeof grad, id: string) => ls.find((l) => l.id === id)!;
-  assert.match(by(grad, 'add-test').hint, /GMAT/); assert.doesNotMatch(by(masters, 'add-test').hint, /GMAT/);
-  assert.match(by(ug, 'add-test').hint, /SAT/); assert.match(by(ug, 'create-essay').title, /personal statement/);
+  assert.match(by(grad, 'add-schools').hint, /Business schools/); assert.match(by(masters, 'add-schools').hint, /Programs/); assert.match(by(ug, 'add-schools').hint, /Universities/);
+  assert.match(by(ug, 'create-essay').title, /personal statement/);
   assert.match(by(masters, 'create-essay').title, /statement of purpose/); assert.match(by(ug, 'finish-checklist').hint, /teacher or counselor/);
   assert.deepEqual(grad.map((l) => l.id), ug.map((l) => l.id));
 });
 test('journey: exploring and shortlisting skip nothing', () => {
   for (const stage of ['exploring', 'shortlisting'] as const) {
     const j = computeJourney(EMPTY_JOURNEY_DATA, { track: 'grad', stage });
-    assert.equal(j.skipped, 0); assert.equal(j.currentLessonId, 'add-education'); assert.equal(j.total, 10); assert.equal(j.step, 1);
+    assert.equal(j.skipped, 0); assert.equal(j.currentLessonId, 'add-schools'); assert.equal(j.total, 8); assert.equal(j.step, 1);
   }
 });
-test('journey: applying skips unfinished units 1-2 as optional and starts at Plan', () => {
-  assert.equal(skippedUnitCount('applying'), 2);
+test('journey: applying skips the unfinished first unit as optional and starts at Plan', () => {
+  assert.equal(skippedUnitCount('applying'), 1);
   const j = computeJourney(EMPTY_JOURNEY_DATA, { track: 'grad', stage: 'applying' });
   const s = ids(j);
-  assert.deepEqual([s['add-education'], s['add-test'], s['add-schools'], s['mark-tier']], ['skipped', 'skipped', 'skipped', 'skipped']);
+  assert.deepEqual([s['add-schools'], s['mark-tier']], ['skipped', 'skipped']);
   assert.equal(j.currentLessonId, 'create-app'); assert.equal(j.currentUnitId, 'plan');
-  assert.equal(j.total, 6); assert.equal(j.skipped, 4); assert.equal(j.overallPct, 0); assert.equal(j.step, 1);
+  assert.equal(j.total, 6); assert.equal(j.skipped, 2); assert.equal(j.overallPct, 0); assert.equal(j.step, 1);
   assert.equal(j.units[0].total, 0); assert.equal(j.units[0].crowned, false);
 });
 test('journey: applying counts early lessons that are already done', () => {
-  const j = computeJourney(d({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 1 }, applications: { total: 1, withDeadline: 0, requirementsComplete: 0 } }), { track: 'undergrad', stage: 'applying' });
+  const j = computeJourney(d({ schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 3 }, applications: { total: 1, withDeadline: 0, requirementsComplete: 0 } }), { track: 'undergrad', stage: 'applying' });
   const s = ids(j);
-  assert.equal(s['add-education'], 'done'); assert.equal(s['add-test'], 'skipped');
+  assert.equal(s['add-schools'], 'done'); assert.equal(s['mark-tier'], 'skipped');
   assert.equal(j.total, 7); assert.equal(j.doneCount, 2); assert.equal(j.overallPct, Math.round((2 / 7) * 100));
   assert.equal(j.currentLessonId, 'set-deadline'); assert.equal(j.step, 3);
 });
 test('journey: submitted starts at Finish', () => {
   const j = computeJourney(EMPTY_JOURNEY_DATA, { track: 'grad', stage: 'submitted' });
-  assert.equal(j.currentUnitId, 'finish'); assert.equal(j.currentLessonId, 'finish-checklist'); assert.equal(j.total, 2); assert.equal(j.skipped, 8);
-  const done = computeJourney(d({ recs: { ...EMPTY_JOURNEY_DATA.recs, recommenders: 1 }, decide: { ...EMPTY_JOURNEY_DATA.decide, submitted: 2 } }), { track: 'grad', stage: 'submitted' });
+  assert.equal(j.currentUnitId, 'finish'); assert.equal(j.currentLessonId, 'finish-checklist'); assert.equal(j.total, 2); assert.equal(j.skipped, 6);
+  const done = computeJourney(d({ decide: { ...EMPTY_JOURNEY_DATA.decide, submitted: 2 } }), { track: 'grad', stage: 'submitted' });
   assert.equal(done.overallPct, 100); assert.equal(done.currentLessonId, null); assert.equal(done.step, 2);
 });
 test('journey: percent counts done over non-skipped lessons for an early starter', () => {
-  const j = computeJourney(d({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 1, tests: 1 }, schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 3, withTier: 1 } }), { track: 'grad', stage: 'exploring' });
-  assert.equal(j.doneCount, 4); assert.equal(j.overallPct, 40); assert.equal(j.step, 5); assert.equal(j.currentUnitId, 'plan');
+  const j = computeJourney(d({ schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 3, withTier: 1 } }), { track: 'grad', stage: 'exploring' });
+  assert.equal(j.doneCount, 2); assert.equal(j.overallPct, 25); assert.equal(j.step, 3); assert.equal(j.currentUnitId, 'plan');
 });
 
 test('about you: optional, trimmed, survives save and drops junk', async () => {
@@ -161,11 +161,4 @@ test('about you: funding, LPDP only with LPDP funding, English status, worry', a
   assert.deepEqual(parseAbout({ funding: 'lpdp', lpdp: 'applied', english: 'not_yet', worry: 'money' }), { funding: 'lpdp', lpdp: 'applied', english: 'not_yet', worry: 'money' });
   assert.deepEqual(parseAbout({ funding: 'family', lpdp: 'awarded' }), { funding: 'family' });
   assert.equal(parseAbout({ funding: 'lottery', english: 'maybe' }), undefined);
-});
-test('journey: English status changes the test step wording', async () => {
-  const { buildUnits } = await import('../lib/journey.ts');
-  const t = (english?: 'taken' | 'booked' | 'not_yet') => buildUnits({ track: 'undergrad', stage: 'exploring', english })[0].lessons[1].title;
-  assert.equal(t('not_yet'), 'Book your English test');
-  assert.match(t('booked'), /after the test/);
-  assert.equal(t(), 'Add a test score');
 });

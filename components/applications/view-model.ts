@@ -1,13 +1,14 @@
 // Shapes the rows loaded by the Applications page into what the list and the detail pane show.
 import { submissionDeadline, type AppListRow, type Deadline, type DecisionStatus, type Requirement } from '@/lib/applications';
 import { countWords } from '@/lib/logic/text';
-import { checklistProgress, expectedResult, parseDecisionDates, phaseOf, programRounds, roundTimeline, sortForList, type DecisionDates, type EssayLite, type ExpectedResult, type Phase, type Progress, type RoundStatus } from '@/lib/results';
+import { checklistProgress, expectedResult, parseDecisionDates, phaseOf, programRounds, unlinkedRoundInfo, type RoundSource, roundTimeline, sortForList, type DecisionDates, type EssayLite, type ExpectedResult, type Phase, type Progress, type RoundStatus } from '@/lib/results';
 
 type One<T> = T | T[] | null;
 export type AppRow = Omit<AppListRow, 'decision'> & {
   decision: One<{ decision: DecisionStatus; decision_date: string | null }>;
   program_info: One<{ decision_dates: unknown; program_url: string | null; deadlines_info?: unknown }>;
 };
+export type { RoundSource };
 export type EssayDraftRow = { id: string; draft: string | null; word_limit: number | null; application_id: string | null };
 export type AppView = {
   row: AppRow; school: string; phase: Phase; progress: Progress<Requirement>; due: Deadline | null;
@@ -19,10 +20,10 @@ export const APP_SELECT = '*, school:schools(id,name,short_name,country,tier), d
 
 const one = <T,>(v: One<T>): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
 
-export function buildViews(rows: AppRow[], essays: EssayDraftRow[], now: Date = new Date()): AppView[] {
+export function buildViews(rows: AppRow[], essays: EssayDraftRow[], now: Date = new Date(), sources: RoundSource[] = []): AppView[] {
   const essayMap = new Map<string, EssayLite>(essays.map((e) => [e.id, { id: e.id, words: countWords(e.draft ?? ''), word_limit: e.word_limit }]));
   const views = rows.map((row): AppView => {
-    const info = one(row.program_info);
+    const info = one(row.program_info) ?? unlinkedRoundInfo(row, sources);
     const dates = parseDecisionDates(info?.decision_dates);
     const reqs = [...(row.application_requirements ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     return {

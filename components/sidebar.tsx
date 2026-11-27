@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as Icons from 'lucide-react';
 import { useState } from 'react';
-import { APP_NAME, NAV } from '@/lib/constants';
+import { APP_NAME, NAV, NAV_GROUPS, type NavItem } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Mascot } from '@/components/mascot';
 
@@ -22,19 +22,26 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = (
-    <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Main">
-      {NAV.map((n, i) => {
-        const Icon = (Icons as unknown as Record<string, Icons.LucideIcon>)[n.icon] ?? Icons.Circle;
-        const active = n.href === '/' ? path === '/' : path.startsWith(n.href);
-        const tint = TINTS[i % TINTS.length];
-        return (
-          <Link key={n.href} href={n.href} onClick={() => setMobileOpen(false)} title={n.label} aria-current={active ? 'page' : undefined}
-            className={cn('flex items-center gap-3 rounded-2xl border-2 px-2 py-1.5 text-sm transition', active ? cn('font-extrabold text-ink', tint.pill) : 'border-transparent font-bold text-secondary hover:bg-bg hover:text-ink')}>
-            <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-on-fun', tint.tile)} aria-hidden><Icon size={17} /></span>
-            {!collapsed && <span className="truncate">{n.label}</span>}
-          </Link>
-        );
-      })}
+    <nav className="flex-1 overflow-y-auto p-2" aria-label="Main">
+      {NAV_GROUPS.map((g, gi) => (
+        <div key={g.id} role="group" aria-label={g.label ?? undefined} className={cn('space-y-1', gi > 0 && 'mt-3')}>
+          {g.label && (collapsed
+            ? <hr className="mx-2 border-line" aria-hidden />
+            : <p className="px-2 pb-0.5 pt-1 text-[11px] font-extrabold uppercase tracking-wider text-secondary">{g.label}</p>)}
+          {(g.items as readonly NavItem[]).map((n) => {
+            const Icon = (Icons as unknown as Record<string, Icons.LucideIcon>)[n.icon] ?? Icons.Circle;
+            const active = n.href === '/' ? path === '/' : path.startsWith(n.href);
+            const tint = TINTS[NAV.findIndex((x) => x.href === n.href) % TINTS.length];
+            return (
+              <Link key={n.href} href={n.href} onClick={() => setMobileOpen(false)} title={n.label} aria-current={active ? 'page' : undefined}
+                className={cn('flex items-center gap-3 rounded-2xl border-2 px-2 py-1.5 text-sm transition', n.sub && !collapsed && 'ml-5', active ? cn('font-extrabold text-ink', tint.pill) : 'border-transparent font-bold text-secondary hover:bg-bg hover:text-ink')}>
+                <span className={cn('flex shrink-0 items-center justify-center rounded-xl text-on-fun', tint.tile, n.sub ? 'h-7 w-7' : 'h-8 w-8')} aria-hidden><Icon size={n.sub ? 15 : 17} /></span>
+                {!collapsed && <span className="truncate">{n.label}</span>}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
   return (

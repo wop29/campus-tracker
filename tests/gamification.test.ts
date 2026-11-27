@@ -133,23 +133,27 @@ test('xp table has unique kinds and positive points', () => {
 
 const full = (over: Partial<JourneyData> = {}): JourneyData => ({ ...EMPTY_JOURNEY_DATA, ...over });
 test('journey: empty account is 0% and the first lesson is current', () => {
-  const j = computeJourney(EMPTY_JOURNEY_DATA); assert.equal(j.overallPct, 0); assert.equal(j.currentLessonId, 'add-education'); assert.equal(j.units.length, 5);
+  const j = computeJourney(EMPTY_JOURNEY_DATA); assert.equal(j.overallPct, 0); assert.equal(j.currentLessonId, 'add-schools'); assert.equal(j.units.length, 4);
   assert.equal(j.units[0].lessons[0].state, 'current'); assert.ok(j.units.flatMap((u) => u.lessons).filter((l) => l.state === 'current').length === 1);
-  assert.ok(j.units.every((u) => !u.crowned && u.pct === 0)); assert.equal(j.step, 1); assert.equal(j.total, 10);
+  assert.ok(j.units.every((u) => !u.crowned && u.pct === 0)); assert.equal(j.step, 1); assert.equal(j.total, 8);
 });
 test('journey: the current lesson is the first not-done lesson, later done lessons stay done (no locking)', () => {
-  const j = computeJourney(full({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 1 }, essays: { ...EMPTY_JOURNEY_DATA.essays, total: 1 } }));
-  assert.equal(j.currentLessonId, 'add-test'); const byId = Object.fromEntries(j.units.flatMap((u) => u.lessons).map((l) => [l.id, l.state]));
-  assert.deepEqual([byId['add-education'], byId['add-test'], byId['add-schools'], byId['create-essay']], ['done', 'current', 'upcoming', 'done']);
+  const j = computeJourney(full({ schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 3 }, essays: { ...EMPTY_JOURNEY_DATA.essays, total: 1 } }));
+  assert.equal(j.currentLessonId, 'mark-tier'); const byId = Object.fromEntries(j.units.flatMap((u) => u.lessons).map((l) => [l.id, l.state]));
+  assert.deepEqual([byId['add-schools'], byId['mark-tier'], byId['create-app'], byId['create-essay']], ['done', 'current', 'upcoming', 'done']);
 });
 test('journey: unit crown and percentages derive from predicates', () => {
-  const j = computeJourney(full({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 2, tests: 1 } }));
-  assert.equal(j.units[0].crowned, true); assert.equal(j.units[0].pct, 100); assert.equal(j.currentUnitId, 'pick-schools');
+  const j = computeJourney(full({ schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 3, withTier: 1 } }));
+  assert.equal(j.units[0].crowned, true); assert.equal(j.units[0].pct, 100); assert.equal(j.currentUnitId, 'plan');
   assert.equal(j.doneCount, 2); assert.equal(j.total, UNITS.reduce((s, u) => s + u.lessons.length, 0)); assert.equal(j.overallPct, Math.round((2 / j.total) * 100));
 });
 test('journey: partial progress is exposed per lesson and a half-done lesson is not done', () => {
-  const j = computeJourney(full({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 1, tests: 1 }, schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 2 } })); const l = j.units[1].lessons[0];
+  const j = computeJourney(full({ schools: { ...EMPTY_JOURNEY_DATA.schools, inPortfolio: 2 } })); const l = j.units[0].lessons[0];
   assert.deepEqual([l.state, l.current, l.target], ['current', 2, 3]);
+});
+test('journey: no step asks for profile details (goals, work, tests, education)', () => {
+  const ids = computeJourney(EMPTY_JOURNEY_DATA).units.flatMap((u) => u.lessons).map((l) => l.id);
+  for (const gone of ['add-education', 'add-test', 'add-work', 'add-goals']) assert.ok(!ids.includes(gone), gone);
 });
 test('journey: everything done gives 100% and no current lesson', () => {
   const all: JourneyData = {

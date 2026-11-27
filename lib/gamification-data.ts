@@ -86,7 +86,7 @@ export async function fetchJourneyBundle(sb: SupabaseClient): Promise<{ journey:
   if (goals.error) throw new Error(goals.error.message);
   if (settingsRow.error) throw new Error(settingsRow.error.message);
   const ob = parseOnboarding((settingsRow.data as { settings?: unknown } | null)?.settings);
-  const profile: JourneyProfile = { track: ob.track, program: ob.program, stage: ob.stage, ...(ob.about?.english ? { english: ob.about.english } : {}) };
+  const profile: JourneyProfile = { track: ob.track, program: ob.program, stage: ob.stage };
   const withDeadline = new Set(deadlines.map((d) => d.application_id));
   const drafted = new Set(draftRows.map((e) => e.id));
   const isSubmitted = (a: { stage: string; submission_confirmed_at: string | null }) => Boolean(a.submission_confirmed_at) || (SUBMITTED_OR_LATER as readonly string[]).includes(a.stage);

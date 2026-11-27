@@ -8,11 +8,11 @@ const d = (over: Partial<JourneyData> = {}): JourneyData => ({ ...EMPTY_JOURNEY_
 const lessons = (j: ReturnType<typeof computeJourney>) => j.units.flatMap((u) => u.lessons);
 
 test('numbering: banner step equals the number shown on the current lesson in the path', () => {
-  // Undergrad with lots done later in the path but no education: old code said "Step 4 of 10" while the path said 1.
+  // Undergrad with lots done later in the path but no schools yet: old code said "Step 4" while the path said 1.
   const j = computeJourney(d({ essays: { ...EMPTY_JOURNEY_DATA.essays, total: 1, withDraft: 1 }, recs: { ...EMPTY_JOURNEY_DATA.recs, recommenders: 1 } }), { track: 'undergrad', stage: 'exploring' });
   const cur = lessons(j).find((l) => l.state === 'current')!;
-  assert.equal(cur.id, 'add-education'); assert.equal(cur.number, 1); assert.equal(j.step, 1); assert.equal(nextStep(j)!.step, 1);
-  assert.deepEqual(lessons(j).map((l) => l.number), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(cur.id, 'add-schools'); assert.equal(cur.number, 1); assert.equal(j.step, 1); assert.equal(nextStep(j)!.step, 1);
+  assert.deepEqual(lessons(j).map((l) => l.number), [1, 2, 3, 4, 5, 6, 7, 8]);
 });
 test('numbering: skipped optional lessons get no number, both views count the same lessons', () => {
   const j = computeJourney(d({ profile: { ...EMPTY_JOURNEY_DATA.profile, education: 1 }, applications: { total: 1, withDeadline: 0, requirementsComplete: 0 } }), { track: 'grad', stage: 'applying' });

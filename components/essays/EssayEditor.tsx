@@ -12,6 +12,7 @@ import { ESSAY_STATUSES, ESSAY_STATUS_LABEL, draftChanged, essayDeadlineNote, es
 import { appDeadline, appLabel, errMsg, useSchoolsApps } from './data';
 import { AiEvalPanel } from './AiEvalPanel';
 import { StoryLinker } from './StoryLinker';
+import { YourStoryPanel } from './YourStoryPanel';
 import { VersionHistory } from './VersionHistory';
 import { useUnsavedWarning } from './useUnsavedWarning';
 
@@ -131,6 +132,7 @@ export function EssayEditor({ essayId }: { essayId: string }) {
         </div>
         <div className="space-y-4">
           <AiEvalPanel essayId={essay.id} dirty={dirty} hasText={essay.draft.trim().length > 0} latest={versions[0] ?? null} onStored={() => void versionsQ.reload()} />
+          <YourStoryPanel />
           <StoryLinker essayId={essay.id} prompt={essay.prompt} schoolId={essay.school_id} />
         </div>
       </div>

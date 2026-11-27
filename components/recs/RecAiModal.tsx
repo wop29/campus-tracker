@@ -71,8 +71,8 @@ function RecAiModalInner({ rec, recommender, app, onClose }: Props) {
         {exps.loading || achs.loading || stories.loading ? <Loading /> : (exps.error || achs.error || stories.error) ? <ErrorBox message={(exps.error || achs.error || stories.error)!} /> : (<>
           <Field label="What do you want?"><Select value={kind} onChange={(e) => setKind(e.target.value as RecAiKind)}>{REC_AI_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}</Select></Field>
           {kind !== 'reminder' && kind !== 'school_guidance' && <div className="grid gap-3 md:grid-cols-3">
-            {list('Work experience', 'e', exps.data, (x) => `${x.position}, ${x.company}`, 'None saved in My Profile yet.')}
-            {list('Achievements', 'a', achs.data, (x) => x.title, 'None saved in My Profile yet.')}
+            {list('Work experience', 'e', exps.data, (x) => `${x.position}, ${x.company}`, 'None saved in Your story yet.')}
+            {list('Achievements', 'a', achs.data, (x) => x.title, 'None saved in Your story yet.')}
             {list('Stories', 's', stories.data, (x) => x.title, 'Story bank is empty.')}</div>}
           <Field label="Anything else to include (optional)" hint="Facts only; this is sent with the draft request."><Textarea rows={2} value={extra} onChange={(e) => setExtra(e.target.value)} /></Field>
           <Button onClick={() => void generate()} disabled={busy}>{busy ? 'Drafting...' : 'Generate draft'}</Button>

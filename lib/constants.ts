@@ -29,13 +29,28 @@ export const CLOSED: Stage[] = ['admitted', 'rejected', 'withdrawn'];
 export const TIERS = ['dream', 'reach', 'competitive', 'target', 'safer'] as const;
 export const TIER_LABEL: Record<string, string> = { dream: 'Dream', reach: 'Reach', competitive: 'Competitive', target: 'Target', safer: 'Safer option' };
 export const REQ_STATUS = ['not_started', 'in_progress', 'complete', 'waived'] as const;
-export const NAV = [
-  { href: '/journey', label: 'Journey', icon: 'Map' },
-  { href: '/', label: 'Overview', icon: 'LayoutDashboard' },
-  { href: '/profile', label: 'My Profile', icon: 'User' },
-  { href: '/schools', label: 'Find universities', icon: 'GraduationCap' },
-  { href: '/applications', label: 'Applications', icon: 'Kanban' },
-  { href: '/scholarships', label: 'Scholarships', icon: 'Award' },
-  { href: '/essays', label: 'Essays', icon: 'FileText' },
-  { href: '/settings', label: 'Settings', icon: 'Settings' },
+/**
+ * Two journeys, kept apart: APPLY is the work of applying (applications, essays, and the answers you reuse in them),
+ * EXPLORE is looking around (finding universities and scholarships). Applications come first.
+ */
+export const NAV_GROUPS = [
+  { id: 'home', label: null, items: [
+    { href: '/journey', label: 'Journey', icon: 'Map' },
+    { href: '/', label: 'Overview', icon: 'LayoutDashboard' },
+  ] },
+  { id: 'apply', label: 'Apply', items: [
+    { href: '/applications', label: 'Applications', icon: 'Kanban' },
+    { href: '/profile', label: 'Your story', icon: 'BookUser', sub: true },
+    { href: '/essays', label: 'Essays', icon: 'FileText' },
+  ] },
+  { id: 'explore', label: 'Explore', items: [
+    { href: '/schools', label: 'Find universities', icon: 'GraduationCap' },
+    { href: '/scholarships', label: 'Scholarships', icon: 'Award' },
+  ] },
+  { id: 'account', label: null, items: [
+    { href: '/settings', label: 'Settings', icon: 'Settings' },
+  ] },
 ] as const;
+export type NavItem = { href: string; label: string; icon: string; sub?: boolean };
+/** Every item in menu order. */
+export const NAV: readonly NavItem[] = NAV_GROUPS.flatMap((g) => g.items as readonly NavItem[]);

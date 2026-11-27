@@ -423,6 +423,15 @@ await test('030: essay deadline follows its application deadline, cannot be type
   const b = await as(B, `select count(*)::int n from public.essays where id=$1`, [e.id]); ok(b.rows[0].n === 0, 'B cannot see A essay');
 });
 
+await test('031: Oxford MBA has six dated stages and its text deadlines read the same', async () => {
+  const r = (await db.query(`select decision_dates, data->'deadlines'->>'value' as txt from public.program_requirements where school_name='Oxford Saïd' and program_name='Oxford MBA'`)).rows[0];
+  ok(r, 'Oxford MBA row missing');
+  const rounds = r.decision_dates.rounds;
+  ok(rounds.length === 6, 'rounds: ' + rounds.length);
+  ok(rounds[0].deadline === '2026-09-02' && rounds[3].deadline === '2027-01-06' && rounds[5].deadline === '2027-04-30', 'deadlines wrong');
+  ok(rounds.every((x) => x.decision_date > x.deadline), 'a decision comes before its deadline');
+  ok(/Stage 4: Jan 6, 2027/.test(r.txt), 'text missing stage 4');
+});
 console.table(results.map(([n, s, e]) => ({ test: n, result: s, detail: e || '' })));
 const failed = results.filter((r) => r[1] === 'FAIL').length;
 console.log(`${results.length - failed}/${results.length} passed`);

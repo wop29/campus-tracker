@@ -9,7 +9,8 @@ import type { School, Task } from '@/lib/applications';
 import { ApplicationDialog } from '@/components/applications/create-dialog';
 import { ApplicationList } from '@/components/applications/app-list';
 import { ApplicationDetail } from '@/components/applications/app-detail';
-import { APP_SELECT, buildViews, type AppRow, type EssayDraftRow } from '@/components/applications/view-model';
+import { APP_SELECT, buildViews, type AppRow, type EssayDraftRow, type RoundSource } from '@/components/applications/view-model';
+import { supabaseBrowser } from '@/lib/supabase/client';
 import { TasksPanel } from '@/components/applications/tasks-panel';
 import { DecisionsView } from '@/components/applications/decisions-view';
 import { DeleteApplicationDialog, UndoDeleteBar, deleteLabel, type DeleteTarget } from '@/components/applications/app-delete';
@@ -46,7 +47,17 @@ function ApplicationsPage() {
   const essays = useQuery<EssayDraftRow[]>((sb) => sb.from('essays').select('id,draft,word_limit,application_id').not('application_id', 'is', null).is('deleted_at', null) as never);
   const schools = useQuery<School[]>((sb) => sb.from('schools').select('id,name,short_name,country,tier,location').is('deleted_at', null).order('name') as never);
 
-  const views = useMemo(() => buildViews(apps.data ?? [], essays.data ?? []), [apps.data, essays.data]);
+  // Applications made before they were linked to a researched program still get that program's round dates.
+  const [sources, setSources] = useState<RoundSource[]>([]);
+  const unlinkedSchools = useMemo(() => [...new Set((apps.data ?? []).filter((r) => !r.program_requirement_id).flatMap((r) => [r.school?.name, r.school?.short_name]).filter((n): n is string => !!n))].sort(), [apps.data]);
+  useEffect(() => {
+    if (!unlinkedSchools.length) { setSources([]); return; }
+    let live = true;
+    void supabaseBrowser().from('program_requirements').select('id,school_name,program_name,degree_type,format,decision_dates,deadlines_info:data->deadlines').in('school_name', unlinkedSchools).then(({ data }) => { if (live) setSources((data ?? []) as RoundSource[]); });
+    return () => { live = false; };
+  }, [unlinkedSchools]);
+
+  const views = useMemo(() => buildViews(apps.data ?? [], essays.data ?? [], new Date(), sources), [apps.data, essays.data, sources]);
   const selected = views.find((v) => v.row.id === picked) ?? (cleared ? null : views[0] ?? null);
   const reload = () => { void apps.reload(); void essays.reload(); };
 

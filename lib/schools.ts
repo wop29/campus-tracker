@@ -139,7 +139,7 @@ export function careerAlignment(goals: GoalsRow | null, rows: DataRow[], now: Da
   const geoRow = by('geographic_placement'); const coRow = by('recruiting_companies');
   const terms = [...phrases(goals?.target_industry), ...phrases(goals?.target_function)];
   const geo = phrases(goals?.target_geography); const companies = (goals?.target_companies ?? []).map((c) => c.trim()).filter(Boolean);
-  if (!terms.length && !geo.length && !companies.length) return { text: 'Add target industry, function or companies in My Profile', missing: true, flags: [] };
+  if (!terms.length && !geo.length && !companies.length) return { text: 'Add target industry, function or companies in Your story', missing: true, flags: [] };
   if (!industryHay.length && !geoRow) return { text: 'Not researched', missing: true, flags: [] };
   const hay = norm(industryHay.map((r) => r.value_text).join(' | '));
   const parts: string[] = [];
@@ -194,7 +194,7 @@ export function buildComparison(inp: { schools: CompareSchool[]; data: DataRow[]
     if (p && isSourced(p) && p.value_num != null && a.gpa != null && a.gpaScale === 4) { const d = Math.round((a.gpa - p.value_num) * 100) / 100; parts.push(`GPA ${d > 0 ? '+' : ''}${d} (yours ${a.gpa} vs ${p.value_num})`); flagWords(dataFlags(p, now)).forEach((f) => flags.add(f)); }
     if (parts.length) return { text: parts.join('; '), missing: false, flags: [...flags] };
     const schoolHas = (g && isSourced(g)) || (p && isSourced(p));
-    return { text: schoolHas ? 'Add a valid GMAT or a 4.0-scale GPA in My Profile' : 'Not researched', missing: true, flags: [] }; }) });
+    return { text: schoolHas ? 'Add a valid GMAT or a 4.0-scale GPA in Your story' : 'Not researched', missing: true, flags: [] }; }) });
   for (const r of rows) r.best = bestFlags(r);
   return rows;
 }

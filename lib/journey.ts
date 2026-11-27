@@ -1,4 +1,4 @@
-// The admissions journey as a short path: at most 5 units and about 10 small actions, tailored to the onboarding answers
+// The admissions journey as a short path: at most 4 units and about 8 small actions, tailored to the onboarding answers
 // (track and stage). Every lesson is completed by REAL records only (counts and flags from the database, gathered by
 // lib/gamification-data.ts). Lessons are never locked: the order is a recommendation. Late joiners skip early units:
 // those lessons are shown as optional and are not counted against progress.
@@ -29,7 +29,7 @@ export const EMPTY_JOURNEY_DATA: JourneyData = {
   decide: { checklistStarted: 0, submitted: 0, decisionsRecorded: 0, offersCompared: 0 },
 };
 
-export type JourneyProfile = { track: Track; program?: Program; stage: Stage; english?: 'taken' | 'booked' | 'not_yet' };
+export type JourneyProfile = { track: Track; program?: Program; stage: Stage };
 export const DEFAULT_JOURNEY_PROFILE: JourneyProfile = { track: 'grad', stage: 'exploring' };
 
 type LessonDef = { id: string; title: string; hint: string; href: string; measure: (d: JourneyData) => { current: number; target: number } };
@@ -38,14 +38,12 @@ const atLeast = (current: number, target: number) => ({ current: Math.min(curren
 
 function copyFor(p: JourneyProfile) {
   if (p.track === 'undergrad') return {
-    tests: 'SAT, ACT, IELTS or TOEFL. A practice score is fine for now.',
     schoolsHint: 'Universities you would be happy at. You can change them anytime.',
     essay: 'personal statement', essayHint: 'Start your personal statement. Paste the prompt if you have it.',
     recommender: 'Line up your teacher letter', recHint: 'Letters, documents and the fee count too. Ask your teacher or counselor for the letter early.',
   };
   const mba = p.program === 'mba';
   return {
-    tests: mba ? 'GMAT, GRE, IELTS or TOEFL. A practice score is fine for now.' : 'GRE, IELTS or TOEFL. A practice score is fine for now.',
     schoolsHint: mba ? 'Business schools you would be happy at. You can change them anytime.' : 'Programs you would be happy at. You can change them anytime.',
     essay: mba ? 'essay' : 'statement of purpose', essayHint: mba ? 'Start one essay. Paste the prompt and the word limit.' : 'Start your statement of purpose. Paste the prompt if you have it.',
     recommender: 'Line up your recommendation letters', recHint: mba ? 'Letters, essays and the fee count too. Ask your recommenders at least a month ahead.' : 'Letters, documents and the fee count too. Ask your professor or manager early.',
@@ -93,19 +91,11 @@ export function trackScope(apps: RawJourneyApp[], essays: RawJourneyEssay[], tra
   };
 }
 
-/** The tailored path. Same five-unit skeleton for everyone, with wording for grad or undergrad applicants. */
+/** The tailored path. Same four-unit skeleton for everyone, with wording for grad or undergrad applicants. */
 /** data is only used for wording that names an application ("Set the deadline for Duke Fuqua"). */
 export function buildUnits(p: JourneyProfile = DEFAULT_JOURNEY_PROFILE, data: JourneyData = EMPTY_JOURNEY_DATA): UnitDef[] {
   const c = copyFor(p);
   return [
-    { id: 'about-you', title: 'About you', blurb: 'A few basics so we can help.', color: 'green', lessons: [
-      { id: 'add-education', title: 'Add your education', hint: p.track === 'undergrad' ? 'Your high school is enough to start.' : 'Your degree and university is enough to start.', href: '/profile', measure: (d) => atLeast(d.profile.education, 1) },
-      p.english === 'not_yet'
-        ? { id: 'add-test', title: 'Book your English test', hint: 'IELTS, TOEFL or Duolingo. Most schools need one. Add your score in Profile once you have it.', href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) }
-        : p.english === 'booked'
-          ? { id: 'add-test', title: 'Add your English score after the test', hint: 'You booked it, nice. Add it in Profile as a planned test now, then the score later.', href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) }
-          : { id: 'add-test', title: 'Add a test score', hint: c.tests, href: '/profile', measure: (d) => atLeast(d.profile.tests, 1) },
-    ] },
     { id: 'pick-schools', title: 'Pick schools', blurb: 'A short list beats a perfect one.', color: 'blue', lessons: [
       { id: 'add-schools', title: 'Add 3 schools to your list', hint: c.schoolsHint, href: '/schools', measure: (d) => atLeast(d.schools.inPortfolio, 3) },
       { id: 'mark-tier', title: 'Mark a dream or target school', hint: 'Just pick one. It helps you plan.', href: '/schools?view=mine', measure: (d) => atLeast(d.schools.withTier, 1) },
@@ -129,7 +119,7 @@ export const UNITS: UnitDef[] = buildUnits();
 
 /** How many leading units a late joiner skips: 'applying' starts at Plan, 'submitted' starts at Finish. */
 export function skippedUnitCount(stage: Stage): number {
-  return stage === 'applying' ? 2 : stage === 'submitted' ? 4 : 0;
+  return stage === 'applying' ? 1 : stage === 'submitted' ? 3 : 0;
 }
 
 export type LessonState = 'done' | 'current' | 'upcoming' | 'skipped';
